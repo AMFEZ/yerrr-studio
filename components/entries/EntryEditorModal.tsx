@@ -15,7 +15,7 @@ export function EntryEditorModal({
 }) {
   const [draft, setDraft] = useState<Entry>(entry);
 
-  function updateMeaning(meaningId: number, updates: Partial<Meaning>) {
+  function updateMeaning(meaningId: string, updates: Partial<Meaning>) {
     setDraft((currentDraft) => ({
       ...currentDraft,
       meanings: currentDraft.meanings.map((meaning) =>
@@ -39,7 +39,7 @@ export function EntryEditorModal({
     }));
   }
 
-  function removeMeaning(meaningId: number) {
+  function removeMeaning(meaningId: string) {
     setDraft((currentDraft) => ({
       ...currentDraft,
       meanings:
