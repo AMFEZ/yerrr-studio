@@ -1,14 +1,14 @@
 export type EntryStatus = "Draft" | "Published" | "Needs Review";
 
 export type Meaning = {
-  id: number;
+  id: string;
   title: string;
   definition: string;
   example: string;
 };
 
 export type Entry = {
-  id: number;
+  id: string;
   word: string;
   type: string;
   status: EntryStatus;
