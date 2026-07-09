@@ -8,7 +8,7 @@ type EntryRow = {
   id: string;
   word: string;
   type: string;
-  status: EntryStatus;
+  status: EntryStatus | string | null;
   notes: string | null;
 };
 
@@ -31,13 +31,36 @@ export function useEntries() {
   async function loadEntries() {
     setIsLoading(true);
 
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.log("No logged-in user found.");
+      setIsLoading(false);
+      return;
+    }
+
+    console.log("Logged in user:", user.id);
+
     const { data: entryRows, error: entryError } = await supabase
       .from("entries")
       .select("id, word, type, status, notes")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (entryError) {
+      console.error("Entry load error:", entryError);
       alert(entryError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const entryIds = (entryRows ?? []).map((entry) => entry.id);
+
+    if (entryIds.length === 0) {
+      setEntries([]);
       setIsLoading(false);
       return;
     }
@@ -45,9 +68,11 @@ export function useEntries() {
     const { data: meaningRows, error: meaningError } = await supabase
       .from("meanings")
       .select("id, entry_id, meaning_order, title, definition, example")
+      .in("entry_id", entryIds)
       .order("meaning_order", { ascending: true });
 
     if (meaningError) {
+      console.error("Meaning load error:", meaningError);
       alert(meaningError.message);
       setIsLoading(false);
       return;
@@ -56,8 +81,13 @@ export function useEntries() {
     const mappedEntries: Entry[] = (entryRows as EntryRow[]).map((entry) => ({
       id: entry.id,
       word: entry.word,
-      type: entry.type,
-      status: entry.status,
+      type: entry.type || "Word",
+      status:
+        entry.status === "Published" ||
+        entry.status === "Needs Review" ||
+        entry.status === "Draft"
+          ? entry.status
+          : "Draft",
       notes: entry.notes ?? "",
       meanings: (meaningRows as MeaningRow[])
         .filter((meaning) => meaning.entry_id === entry.id)
@@ -68,6 +98,8 @@ export function useEntries() {
           example: meaning.example ?? "",
         })),
     }));
+
+    console.log("Loaded entries:", mappedEntries.length);
 
     setEntries(mappedEntries);
     setIsLoading(false);
@@ -120,40 +152,20 @@ export function useEntries() {
       return;
     }
 
-    const { data: meaning, error: meaningError } = await supabase
-      .from("meanings")
-      .insert({
-        entry_id: entry.id,
-        meaning_order: 1,
-        title: "",
-        definition: "",
-        example: "",
-      })
-      .select()
-      .single();
+    const { error: meaningError } = await supabase.from("meanings").insert({
+      entry_id: entry.id,
+      meaning_order: 1,
+      title: "",
+      definition: "",
+      example: "",
+    });
 
     if (meaningError) {
       alert(meaningError.message);
       return;
     }
 
-    const newEntry: Entry = {
-      id: entry.id,
-      word: entry.word,
-      type: entry.type,
-      status: entry.status,
-      notes: entry.notes ?? "",
-      meanings: [
-        {
-          id: meaning.id,
-          title: meaning.title ?? "",
-          definition: meaning.definition ?? "",
-          example: meaning.example ?? "",
-        },
-      ],
-    };
-
-    setEntries((currentEntries) => [newEntry, ...currentEntries]);
+    await loadEntries();
   }
 
   async function updateEntry(updatedEntry: Entry) {
@@ -225,11 +237,7 @@ export function useEntries() {
       return;
     }
 
-    setEntries((currentEntries) =>
-      currentEntries.map((entry) =>
-        entry.id === id ? { ...entry, status } : entry
-      )
-    );
+    await loadEntries();
   }
 
   return {
