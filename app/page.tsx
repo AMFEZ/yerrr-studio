@@ -1,18 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+type EntryStatus = "Draft" | "Published" | "Needs Review";
 
 type Entry = {
   id: number;
   word: string;
   type: string;
+  status: EntryStatus;
 };
 
-const stats = [
-  { label: "Entries", emoji: "📚" },
-  { label: "Concepts", emoji: "🧠" },
-  { label: "Drafts", emoji: "📝" },
-  { label: "Needs Review", emoji: "⚠️" },
+const entryTypes = [
+  "Word",
+  "Phrase",
+  "Expression",
+  "Greeting",
+  "Reaction",
+  "Cultural Term",
 ];
 
 export default function Home() {
@@ -20,18 +25,46 @@ export default function Home() {
   const [isOpen, setIsOpen] = useState(false);
   const [word, setWord] = useState("");
   const [type, setType] = useState("Word");
+  const [search, setSearch] = useState("");
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) =>
+      entry.word.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [entries, search]);
+
+  const draftCount = entries.filter((entry) => entry.status === "Draft").length;
+  const publishedCount = entries.filter(
+    (entry) => entry.status === "Published"
+  ).length;
+  const reviewCount = entries.filter(
+    (entry) => entry.status === "Needs Review"
+  ).length;
 
   function addEntry() {
     if (!word.trim()) return;
 
     setEntries([
-      { id: Date.now(), word: word.trim(), type },
+      {
+        id: Date.now(),
+        word: word.trim(),
+        type,
+        status: "Draft",
+      },
       ...entries,
     ]);
 
     setWord("");
     setType("Word");
     setIsOpen(false);
+  }
+
+  function updateStatus(id: number, status: EntryStatus) {
+    setEntries((currentEntries) =>
+      currentEntries.map((entry) =>
+        entry.id === id ? { ...entry, status } : entry
+      )
+    );
   }
 
   return (
@@ -45,30 +78,24 @@ export default function Home() {
             The NYC Slang Lexicon
           </h1>
           <p className="mt-4 max-w-2xl text-neutral-400">
-            Your private workspace for building, editing, and preserving the
-            living language of New York City.
+            Capture, review, and publish the living language of New York City.
           </p>
         </header>
 
         <section className="grid gap-4 md:grid-cols-4">
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
-            >
-              <div className="text-3xl">{stat.emoji}</div>
-              <p className="mt-4 text-3xl font-black">
-                {stat.label === "Entries" ? entries.length : 0}
-              </p>
-              <p className="text-sm text-neutral-400">{stat.label}</p>
-            </div>
-          ))}
+          <Stat emoji="📖" label="Published Lexicon" value={publishedCount} />
+          <Stat emoji="✍️" label="Captured Drafts" value={draftCount} />
+          <Stat emoji="🧐" label="Editorial Queue" value={reviewCount} />
+          <Stat emoji="📚" label="Total Entries" value={entries.length} />
         </section>
 
         <section className="mt-10 grid gap-6 md:grid-cols-[1.5fr_1fr]">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-            <h2 className="mb-4 text-xl font-bold">Search Lexicon</h2>
+            <h2 className="mb-4 text-xl font-bold">Lexicon Search</h2>
+
             <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
               placeholder="Search deadass, brick, ocky..."
               className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
             />
@@ -78,19 +105,62 @@ export default function Home() {
                 Entries
               </h3>
 
-              {entries.length === 0 ? (
+              {filteredEntries.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-neutral-500">
-                  No entries yet. Add your first word.
+                  {entries.length === 0
+                    ? "No entries yet. Capture your first word."
+                    : "No matching entries found."}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {entries.map((entry) => (
+                  {filteredEntries.map((entry) => (
                     <div
                       key={entry.id}
                       className="rounded-xl border border-neutral-800 bg-neutral-950 p-4"
                     >
-                      <p className="text-lg font-black">{entry.word}</p>
-                      <p className="text-sm text-neutral-500">{entry.type}</p>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-lg font-black">{entry.word}</p>
+                          <p className="text-sm text-neutral-500">
+                            {entry.type}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            entry.status === "Draft"
+                              ? "bg-yellow-400 text-black"
+                              : entry.status === "Needs Review"
+                              ? "bg-orange-500 text-black"
+                              : "bg-emerald-500 text-black"
+                          }`}
+                        >
+                          {entry.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => updateStatus(entry.id, "Draft")}
+                          className="rounded-lg bg-neutral-800 px-3 py-2 text-xs font-bold hover:bg-neutral-700"
+                        >
+                          Draft
+                        </button>
+                        <button
+                          onClick={() =>
+                            updateStatus(entry.id, "Needs Review")
+                          }
+                          className="rounded-lg bg-neutral-800 px-3 py-2 text-xs font-bold hover:bg-neutral-700"
+                        >
+                          Needs Review
+                        </button>
+                        <button
+                          onClick={() => updateStatus(entry.id, "Published")}
+                          className="rounded-lg bg-neutral-800 px-3 py-2 text-xs font-bold hover:bg-neutral-700"
+                        >
+                          Publish
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -100,12 +170,13 @@ export default function Home() {
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
             <h2 className="mb-4 text-xl font-bold">Quick Actions</h2>
+
             <div className="space-y-3">
               <button
                 onClick={() => setIsOpen(true)}
-                className="w-full rounded-xl bg-yellow-400 px-4 py-3 text-left font-bold text-black transition hover:scale-[1.01] hover:bg-yellow-300"
+                className="w-full rounded-xl bg-yellow-400 px-4 py-3 text-left font-black text-black transition hover:scale-[1.01] hover:bg-yellow-300"
               >
-                ➕ New Entry
+                ➕ Capture Slang
               </button>
 
               {["Browse Lexicon", "Concept Explorer", "Review Queue", "Settings"].map(
@@ -123,16 +194,16 @@ export default function Home() {
         </section>
 
         <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-          YERRR Studio Alpha · 0.0.2
+          YERRR Studio Alpha · 0.0.3
         </footer>
       </div>
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
-            <h2 className="text-2xl font-black">Add New Entry</h2>
+            <h2 className="text-2xl font-black">Capture Slang</h2>
             <p className="mt-2 text-sm text-neutral-400">
-              Capture a word or phrase before you forget it.
+              Save the word now. Define it later.
             </p>
 
             <label className="mt-6 block text-sm font-bold text-neutral-300">
@@ -140,8 +211,11 @@ export default function Home() {
             </label>
             <input
               value={word}
-              onChange={(e) => setWord(e.target.value)}
-              placeholder="Geeked"
+              onChange={(event) => setWord(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") addEntry();
+              }}
+              placeholder="Mixy"
               className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
             />
 
@@ -150,15 +224,12 @@ export default function Home() {
             </label>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value)}
+              onChange={(event) => setType(event.target.value)}
               className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none focus:border-yellow-400"
             >
-              <option>Word</option>
-              <option>Phrase</option>
-              <option>Expression</option>
-              <option>Greeting</option>
-              <option>Reaction</option>
-              <option>Cultural Term</option>
+              {entryTypes.map((entryType) => (
+                <option key={entryType}>{entryType}</option>
+              ))}
             </select>
 
             <div className="mt-6 flex gap-3">
@@ -166,7 +237,7 @@ export default function Home() {
                 onClick={addEntry}
                 className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-black hover:bg-yellow-300"
               >
-                Save Entry
+                Save Draft
               </button>
               <button
                 onClick={() => setIsOpen(false)}
@@ -179,5 +250,23 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+function Stat({
+  emoji,
+  label,
+  value,
+}: {
+  emoji: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
+      <div className="text-3xl">{emoji}</div>
+      <p className="mt-4 text-3xl font-black">{value}</p>
+      <p className="text-sm text-neutral-400">{label}</p>
+    </div>
   );
 }
