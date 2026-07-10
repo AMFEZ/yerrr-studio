@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { Entry } from "@/types/entry";
 import { useEntries } from "@/hooks/useEntries";
 import { Sidebar } from "@/components/dashboard/Sidebar";
@@ -29,15 +29,28 @@ export default function Home() {
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
 
-  async function handleSaveEntry(updatedEntry: Entry) {
-    await updateEntry(updatedEntry);
-    setSelectedEntry(null);
-  }
+  const handleSaveEntry = useCallback(
+    async function handleSaveEntry(updatedEntry: Entry) {
+      await updateEntry(updatedEntry);
+      setSelectedEntry(null);
+    },
+    [updateEntry]
+  );
 
-  async function handleDeleteEntry(id: string) {
-    await deleteEntry(id);
-    setSelectedEntry(null);
-  }
+  const handleAutoSaveEntry = useCallback(
+    async function handleAutoSaveEntry(updatedEntry: Entry) {
+      await updateEntry(updatedEntry);
+    },
+    [updateEntry]
+  );
+
+  const handleDeleteEntry = useCallback(
+    async function handleDeleteEntry(id: string) {
+      await deleteEntry(id);
+      setSelectedEntry(null);
+    },
+    [deleteEntry]
+  );
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white lg:flex">
@@ -79,7 +92,8 @@ export default function Home() {
               <div>
                 <h2 className="text-xl font-bold">Entry Workspace</h2>
                 <p className="text-sm text-neutral-500">
-                  Search, open, edit, verify, and delete captured slang.
+                  Search, open, edit, autosave, verify, and delete captured
+                  slang.
                 </p>
               </div>
 
@@ -121,7 +135,7 @@ export default function Home() {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio Alpha · 2.3 Full Lexicon V8 Editor
+            YERRR Studio Alpha · 2.4 Autosave
           </footer>
         </div>
       </section>
@@ -138,6 +152,7 @@ export default function Home() {
           entry={selectedEntry}
           onClose={() => setSelectedEntry(null)}
           onSave={handleSaveEntry}
+          onAutoSave={handleAutoSaveEntry}
           onDelete={handleDeleteEntry}
         />
       )}

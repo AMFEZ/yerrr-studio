@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Entry, EntryStatus, Meaning } from "@/types/entry";
 import {
@@ -24,6 +24,8 @@ const textareaClass =
 
 const selectClass =
   "mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none focus:border-yellow-400";
+
+type AutosaveStatus = "saved" | "unsaved" | "saving" | "error";
 
 function getMissingMeaningFields(meaning: Meaning) {
   const missingFields: string[] = [];
@@ -49,14 +51,58 @@ export function EntryEditorModal({
   entry,
   onClose,
   onSave,
+  onAutoSave,
   onDelete,
 }: {
   entry: Entry;
   onClose: () => void;
   onSave: (entry: Entry) => void;
+  onAutoSave: (entry: Entry) => Promise<void>;
   onDelete: (id: string) => void;
 }) {
   const [draft, setDraft] = useState<Entry>(entry);
+  const [autosaveStatus, setAutosaveStatus] =
+    useState<AutosaveStatus>("saved");
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+
+  const firstRenderRef = useRef(true);
+  const lastSavedSnapshotRef = useRef(JSON.stringify(entry));
+  const saveVersionRef = useRef(0);
+
+  useEffect(() => {
+    const currentSnapshot = JSON.stringify(draft);
+
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false;
+      return;
+    }
+
+    if (currentSnapshot === lastSavedSnapshotRef.current) {
+      return;
+    }
+
+    setAutosaveStatus("unsaved");
+
+    const timeout = window.setTimeout(async () => {
+      const saveVersion = saveVersionRef.current + 1;
+      saveVersionRef.current = saveVersion;
+
+      try {
+        setAutosaveStatus("saving");
+        await onAutoSave(draft);
+
+        if (saveVersion === saveVersionRef.current) {
+          lastSavedSnapshotRef.current = currentSnapshot;
+          setSavedAt(new Date());
+          setAutosaveStatus("saved");
+        }
+      } catch {
+        setAutosaveStatus("error");
+      }
+    }, 1500);
+
+    return () => window.clearTimeout(timeout);
+  }, [draft, onAutoSave]);
 
   function updateMeaning(meaningId: string, updates: Partial<Meaning>) {
     setDraft((currentDraft) => ({
@@ -103,28 +149,37 @@ export function EntryEditorModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-4">
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+    <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
+      <div className="sticky top-0 z-10 -mx-6 -mt-6 mb-6 border-b border-neutral-800 bg-neutral-900/95 px-6 py-5 backdrop-blur">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.25em] text-yellow-400">
               Full Lexicon V8 Editor
             </p>
             <h2 className="mt-2 text-3xl font-black">{draft.word}</h2>
             <p className="mt-1 text-sm text-neutral-500">
-              Edit word data, publishing metadata, meanings, examples, and
-              review fields.
+              Autosave is active. Changes save after you stop typing.
             </p>
           </div>
 
           <button
             onClick={onClose}
-            className="rounded-lg bg-neutral-800 px-3 py-2 text-sm font-bold hover:bg-neutral-700"
+            className="w-fit rounded-lg bg-neutral-800 px-3 py-2 text-sm font-bold hover:bg-neutral-700"
           >
             Close
           </button>
         </div>
 
+        <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <p className="text-sm font-black text-neutral-300">
+              Autosave Status
+            </p>
+            <AutosaveIndicator status={autosaveStatus} savedAt={savedAt} />
+          </div>
+        </div>
+      </div>
         <Section title="Word Editor" subtitle="Core word or phrase metadata.">
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Word / Phrase">
@@ -588,7 +643,7 @@ export function EntryEditorModal({
             onClick={() => onSave(draft)}
             className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-black hover:bg-yellow-300"
           >
-            Save Changes
+            Save Changes Manually
           </button>
 
           <button
@@ -606,6 +661,50 @@ export function EntryEditorModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AutosaveIndicator({
+  status,
+  savedAt,
+}: {
+  status: AutosaveStatus;
+  savedAt: Date | null;
+}) {
+  if (status === "saving") {
+    return (
+      <div className="rounded-full bg-blue-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-300">
+        Saving...
+      </div>
+    );
+  }
+
+  if (status === "unsaved") {
+    return (
+      <div className="rounded-full bg-yellow-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-yellow-300">
+        Unsaved changes...
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-300">
+        Autosave failed
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-full bg-green-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-green-300">
+      Saved
+      {savedAt
+        ? ` at ${savedAt.toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          })}`
+        : ""}
     </div>
   );
 }
