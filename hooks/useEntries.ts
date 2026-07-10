@@ -36,6 +36,8 @@ type EntryRow = {
   illustration_notes: string | null;
   notes: string | null;
   updated_at: string | null;
+  deleted_at: string | null;
+  deleted_previous_status: string | null;
 };
 
 type MeaningRow = {
@@ -63,6 +65,16 @@ function normalizeEntryStatus(status: string | null): EntryStatus {
   }
 
   return "Draft";
+}
+
+function normalizeDeletedPreviousStatus(
+  status: string | null
+): EntryStatus | "" {
+  if ((entryStatusOptions as readonly string[]).includes(status ?? "")) {
+    return status as EntryStatus;
+  }
+
+  return "";
 }
 
 function normalizeEditorialStatus(status: string | null): EditorialStatus {
@@ -105,6 +117,40 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function entryMatchesSearch(entry: Entry, search: string) {
+  const query = search.toLowerCase();
+
+  return (
+    entry.word.toLowerCase().includes(query) ||
+    entry.type.toLowerCase().includes(query) ||
+    entry.slug.toLowerCase().includes(query) ||
+    entry.pronunciation.toLowerCase().includes(query) ||
+    entry.partOfSpeech.toLowerCase().includes(query) ||
+    entry.alternateSpellings.toLowerCase().includes(query) ||
+    entry.status.toLowerCase().includes(query) ||
+    entry.lifecycle.toLowerCase().includes(query) ||
+    entry.visibility.toLowerCase().includes(query) ||
+    entry.audioFilename.toLowerCase().includes(query) ||
+    entry.illustrationFilename.toLowerCase().includes(query) ||
+    entry.illustrationNotes.toLowerCase().includes(query) ||
+    entry.notes.toLowerCase().includes(query) ||
+    entry.meanings.some(
+      (meaning) =>
+        meaning.title.toLowerCase().includes(query) ||
+        meaning.definition.toLowerCase().includes(query) ||
+        meaning.example.toLowerCase().includes(query) ||
+        meaning.plainEnglish.toLowerCase().includes(query) ||
+        meaning.category.toLowerCase().includes(query) ||
+        meaning.tone.toLowerCase().includes(query) ||
+        meaning.conceptsText.toLowerCase().includes(query) ||
+        meaning.usageFrequency.toLowerCase().includes(query) ||
+        meaning.culturalContext.toLowerCase().includes(query) ||
+        meaning.editorialStatus.toLowerCase().includes(query) ||
+        meaning.source.toLowerCase().includes(query)
+    )
+  );
+}
+
 function isEntryInReviewQueue(entry: Entry) {
   if (entry.status === "Needs Review") return true;
   if (entry.meanings.length === 0) return true;
@@ -126,7 +172,7 @@ function isEntryInReviewQueue(entry: Entry) {
 export function useEntries() {
   const supabase = useMemo(() => createClient(), []);
 
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [allEntries, setAllEntries] = useState<Entry[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -139,7 +185,7 @@ export function useEntries() {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      setEntries([]);
+      setAllEntries([]);
       setIsLoading(false);
       return;
     }
@@ -164,7 +210,9 @@ export function useEntries() {
         illustration_filename,
         illustration_notes,
         notes,
-        updated_at
+        updated_at,
+        deleted_at,
+        deleted_previous_status
       `
       )
       .eq("user_id", user.id)
@@ -180,7 +228,7 @@ export function useEntries() {
     const entryIds = entryList.map((entry) => entry.id);
 
     if (entryIds.length === 0) {
-      setEntries([]);
+      setAllEntries([]);
       setIsLoading(false);
       return;
     }
@@ -236,6 +284,10 @@ export function useEntries() {
       illustrationNotes: entry.illustration_notes ?? "",
       notes: entry.notes ?? "",
       updatedAt: entry.updated_at ?? "",
+      deletedAt: entry.deleted_at ?? "",
+      deletedPreviousStatus: normalizeDeletedPreviousStatus(
+        entry.deleted_previous_status
+      ),
       meanings: meaningList
         .filter((meaning) => meaning.entry_id === entry.id)
         .map((meaning) => ({
@@ -256,7 +308,7 @@ export function useEntries() {
         })),
     }));
 
-    setEntries(mappedEntries);
+    setAllEntries(mappedEntries);
     setIsLoading(false);
   }, [supabase]);
 
@@ -264,41 +316,21 @@ export function useEntries() {
     loadEntries();
   }, [loadEntries]);
 
-  const filteredEntries = useMemo(() => {
-    return entries.filter((entry) => {
-      const query = search.toLowerCase();
+  const entries = useMemo(() => {
+    return allEntries.filter((entry) => !entry.deletedAt);
+  }, [allEntries]);
 
-      return (
-        entry.word.toLowerCase().includes(query) ||
-        entry.type.toLowerCase().includes(query) ||
-        entry.slug.toLowerCase().includes(query) ||
-        entry.pronunciation.toLowerCase().includes(query) ||
-        entry.partOfSpeech.toLowerCase().includes(query) ||
-        entry.alternateSpellings.toLowerCase().includes(query) ||
-        entry.status.toLowerCase().includes(query) ||
-        entry.lifecycle.toLowerCase().includes(query) ||
-        entry.visibility.toLowerCase().includes(query) ||
-        entry.audioFilename.toLowerCase().includes(query) ||
-        entry.illustrationFilename.toLowerCase().includes(query) ||
-        entry.illustrationNotes.toLowerCase().includes(query) ||
-        entry.notes.toLowerCase().includes(query) ||
-        entry.meanings.some(
-          (meaning) =>
-            meaning.title.toLowerCase().includes(query) ||
-            meaning.definition.toLowerCase().includes(query) ||
-            meaning.example.toLowerCase().includes(query) ||
-            meaning.plainEnglish.toLowerCase().includes(query) ||
-            meaning.category.toLowerCase().includes(query) ||
-            meaning.tone.toLowerCase().includes(query) ||
-            meaning.conceptsText.toLowerCase().includes(query) ||
-            meaning.usageFrequency.toLowerCase().includes(query) ||
-            meaning.culturalContext.toLowerCase().includes(query) ||
-            meaning.editorialStatus.toLowerCase().includes(query) ||
-            meaning.source.toLowerCase().includes(query)
-        )
-      );
-    });
+  const trashEntries = useMemo(() => {
+    return allEntries.filter((entry) => entry.deletedAt);
+  }, [allEntries]);
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => entryMatchesSearch(entry, search));
   }, [entries, search]);
+
+  const filteredTrashEntries = useMemo(() => {
+    return trashEntries.filter((entry) => entryMatchesSearch(entry, search));
+  }, [trashEntries, search]);
 
   const reviewQueueEntries = useMemo(() => {
     return entries.filter(isEntryInReviewQueue);
@@ -327,6 +359,8 @@ export function useEntries() {
   const publishedCount = entries.filter(
     (entry) => entry.status === "Published"
   ).length;
+
+  const trashCount = trashEntries.length;
 
   const addEntry = useCallback(
     async function addEntry(word: string, type: string) {
@@ -362,6 +396,8 @@ export function useEntries() {
           illustration_filename: "",
           illustration_notes: "",
           notes: "",
+          deleted_at: null,
+          deleted_previous_status: "",
         })
         .select("id")
         .single();
@@ -553,12 +589,32 @@ export function useEntries() {
   const deleteEntry = useCallback(
     async function deleteEntry(id: string) {
       const confirmed = window.confirm(
-        "Delete this entry? This will also delete all meanings attached to it."
+        "Move this entry to Trash? You can restore it later."
       );
 
       if (!confirmed) return;
 
-      const { error } = await supabase.from("entries").delete().eq("id", id);
+      const { data: entry, error: fetchError } = await supabase
+        .from("entries")
+        .select("status")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) {
+        alert(fetchError.message);
+        return;
+      }
+
+      const previousStatus = normalizeEntryStatus(entry.status);
+
+      const { error } = await supabase
+        .from("entries")
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_previous_status: previousStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
 
       if (error) {
         alert(error.message);
@@ -574,7 +630,71 @@ export function useEntries() {
     async function deleteEntries(ids: string[]) {
       if (ids.length === 0) return;
 
-      const { error } = await supabase.from("entries").delete().in("id", ids);
+      const { data: entriesToDelete, error: fetchError } = await supabase
+        .from("entries")
+        .select("id, status")
+        .in("id", ids);
+
+      if (fetchError) {
+        alert(fetchError.message);
+        return;
+      }
+
+      const groupedByStatus = new Map<EntryStatus, string[]>();
+
+      (entriesToDelete ?? []).forEach((entry) => {
+        const previousStatus = normalizeEntryStatus(entry.status);
+        const currentIds = groupedByStatus.get(previousStatus) ?? [];
+        groupedByStatus.set(previousStatus, [...currentIds, entry.id]);
+      });
+
+      for (const [previousStatus, groupedIds] of groupedByStatus.entries()) {
+        const { error } = await supabase
+          .from("entries")
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_previous_status: previousStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .in("id", groupedIds);
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+      }
+
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
+
+  const restoreEntry = useCallback(
+    async function restoreEntry(id: string) {
+      const { data: entry, error: fetchError } = await supabase
+        .from("entries")
+        .select("deleted_previous_status")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) {
+        alert(fetchError.message);
+        return;
+      }
+
+      const restoreStatus =
+        normalizeDeletedPreviousStatus(entry.deleted_previous_status) ||
+        "Draft";
+
+      const { error } = await supabase
+        .from("entries")
+        .update({
+          deleted_at: null,
+          deleted_previous_status: "",
+          status: restoreStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
 
       if (error) {
         alert(error.message);
@@ -586,9 +706,58 @@ export function useEntries() {
     [loadEntries, supabase]
   );
 
+  const restoreEntries = useCallback(
+    async function restoreEntries(ids: string[]) {
+      if (ids.length === 0) return;
+
+      const { data: entriesToRestore, error: fetchError } = await supabase
+        .from("entries")
+        .select("id, deleted_previous_status")
+        .in("id", ids);
+
+      if (fetchError) {
+        alert(fetchError.message);
+        return;
+      }
+
+      const groupedByStatus = new Map<EntryStatus, string[]>();
+
+      (entriesToRestore ?? []).forEach((entry) => {
+        const restoreStatus =
+          normalizeDeletedPreviousStatus(entry.deleted_previous_status) ||
+          "Draft";
+
+        const currentIds = groupedByStatus.get(restoreStatus) ?? [];
+        groupedByStatus.set(restoreStatus, [...currentIds, entry.id]);
+      });
+
+      for (const [restoreStatus, groupedIds] of groupedByStatus.entries()) {
+        const { error } = await supabase
+          .from("entries")
+          .update({
+            deleted_at: null,
+            deleted_previous_status: "",
+            status: restoreStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .in("id", groupedIds);
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+      }
+
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
+
   return {
     entries,
+    trashEntries,
     filteredEntries,
+    filteredTrashEntries,
     reviewQueueEntries,
     filteredReviewQueueEntries,
     search,
@@ -599,6 +768,8 @@ export function useEntries() {
     updateEntriesStatus,
     deleteEntry,
     deleteEntries,
+    restoreEntry,
+    restoreEntries,
     draftCount,
     needsReviewStatusCount,
     reviewQueueCount,
@@ -606,6 +777,7 @@ export function useEntries() {
     verifiedCount,
     archivedCount,
     publishedCount,
+    trashCount,
     isLoading,
   };
 }

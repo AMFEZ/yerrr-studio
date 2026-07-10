@@ -10,7 +10,13 @@ import { EntryCard } from "@/components/entries/EntryCard";
 import { CaptureModal } from "@/components/entries/CaptureModal";
 import { EntryEditorModal } from "@/components/entries/EntryEditorModal";
 
-type WorkspaceMode = "all" | "review" | "draft" | "publish" | "duplicates";
+type WorkspaceMode =
+  | "all"
+  | "review"
+  | "draft"
+  | "publish"
+  | "duplicates"
+  | "trash";
 
 function normalizeDuplicateKey(value: string) {
   return value
@@ -87,7 +93,9 @@ function isPublishQueueEntry(entry: Entry) {
 export default function Home() {
   const {
     entries,
+    trashEntries,
     filteredEntries,
+    filteredTrashEntries,
     filteredReviewQueueEntries,
     search,
     setSearch,
@@ -97,10 +105,13 @@ export default function Home() {
     updateEntriesStatus,
     deleteEntry,
     deleteEntries,
+    restoreEntry,
+    restoreEntries,
     draftCount,
     reviewQueueCount,
     verifiedCount,
     publishedCount,
+    trashCount,
     isLoading,
   } = useEntries();
 
@@ -136,7 +147,12 @@ export default function Home() {
       ? filteredPublishQueueEntries
       : workspaceMode === "duplicates"
       ? filteredDuplicateEntries
+      : workspaceMode === "trash"
+      ? filteredTrashEntries
       : filteredEntries;
+
+  const visibleTotal =
+    workspaceMode === "trash" ? trashEntries.length : entries.length;
 
   const visibleEntryIds = useMemo(() => {
     return visibleEntries.map((entry) => entry.id);
@@ -174,6 +190,16 @@ export default function Home() {
       );
     },
     [deleteEntry]
+  );
+
+  const handleRestoreEntry = useCallback(
+    async function handleRestoreEntry(id: string) {
+      await restoreEntry(id);
+      setSelectedEntryIds((currentIds) =>
+        currentIds.filter((entryId) => entryId !== id)
+      );
+    },
+    [restoreEntry]
   );
 
   function toggleEntrySelection(id: string) {
@@ -220,14 +246,29 @@ export default function Home() {
     if (selectedVisibleEntryIds.length === 0) return;
 
     const confirmed = window.confirm(
-      `Delete ${selectedVisibleEntryIds.length} selected entr${
+      `Move ${selectedVisibleEntryIds.length} selected entr${
         selectedVisibleEntryIds.length === 1 ? "y" : "ies"
-      }? This will also delete their meanings. This cannot be undone yet.`
+      } to Trash? You can restore them later.`
     );
 
     if (!confirmed) return;
 
     await deleteEntries(selectedVisibleEntryIds);
+    setSelectedEntryIds([]);
+  }
+
+  async function handleBulkRestore() {
+    if (selectedVisibleEntryIds.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Restore ${selectedVisibleEntryIds.length} selected entr${
+        selectedVisibleEntryIds.length === 1 ? "y" : "ies"
+      } from Trash?`
+    );
+
+    if (!confirmed) return;
+
+    await restoreEntries(selectedVisibleEntryIds);
     setSelectedEntryIds([]);
   }
 
@@ -240,6 +281,8 @@ export default function Home() {
       ? "Publish Queue"
       : workspaceMode === "duplicates"
       ? "Duplicate Detection"
+      : workspaceMode === "trash"
+      ? "Trash / Undo Delete"
       : "Entry Workspace";
 
   const workspaceDescription =
@@ -251,6 +294,8 @@ export default function Home() {
       ? "Focus only on verified entries that are ready to publish."
       : workspaceMode === "duplicates"
       ? "Find possible duplicate entries based on word, slug, and alternate spellings."
+      : workspaceMode === "trash"
+      ? "Restore entries that were deleted by mistake."
       : "Search, open, edit, autosave, verify, publish, and delete captured slang.";
 
   return (
@@ -288,7 +333,7 @@ export default function Home() {
               label="Possible Duplicates"
               value={duplicateMatchesByEntryId.size}
             />
-            <StatCard emoji="🧐" label="Review Queue" value={reviewQueueCount} />
+            <StatCard emoji="🗑️" label="Trash" value={trashCount} />
             <StatCard emoji="🚀" label="Published" value={publishedCount} />
           </section>
 
@@ -311,60 +356,26 @@ export default function Home() {
 
             <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex flex-wrap rounded-xl border border-neutral-800 bg-neutral-950 p-1">
-                <button
-                  onClick={() => setWorkspaceMode("all")}
-                  className={`rounded-lg px-4 py-2 text-sm font-black ${
-                    workspaceMode === "all"
-                      ? "bg-yellow-400 text-black"
-                      : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  All Entries
-                </button>
-
-                <button
-                  onClick={() => setWorkspaceMode("review")}
-                  className={`rounded-lg px-4 py-2 text-sm font-black ${
-                    workspaceMode === "review"
-                      ? "bg-yellow-400 text-black"
-                      : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  Review Queue
-                </button>
-
-                <button
-                  onClick={() => setWorkspaceMode("draft")}
-                  className={`rounded-lg px-4 py-2 text-sm font-black ${
-                    workspaceMode === "draft"
-                      ? "bg-yellow-400 text-black"
-                      : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  Draft Queue
-                </button>
-
-                <button
-                  onClick={() => setWorkspaceMode("publish")}
-                  className={`rounded-lg px-4 py-2 text-sm font-black ${
-                    workspaceMode === "publish"
-                      ? "bg-yellow-400 text-black"
-                      : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  Publish Queue
-                </button>
-
-                <button
-                  onClick={() => setWorkspaceMode("duplicates")}
-                  className={`rounded-lg px-4 py-2 text-sm font-black ${
-                    workspaceMode === "duplicates"
-                      ? "bg-yellow-400 text-black"
-                      : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  Duplicates
-                </button>
+                {[
+                  ["all", "All Entries"],
+                  ["review", "Review Queue"],
+                  ["draft", "Draft Queue"],
+                  ["publish", "Publish Queue"],
+                  ["duplicates", "Duplicates"],
+                  ["trash", "Trash"],
+                ].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setWorkspaceMode(mode as WorkspaceMode)}
+                    className={`rounded-lg px-4 py-2 text-sm font-black ${
+                      workspaceMode === mode
+                        ? "bg-yellow-400 text-black"
+                        : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
 
               <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-400">
@@ -373,7 +384,7 @@ export default function Home() {
                   {visibleEntries.length}
                 </span>{" "}
                 of{" "}
-                <span className="font-black text-white">{entries.length}</span>{" "}
+                <span className="font-black text-white">{visibleTotal}</span>{" "}
                 entries
               </div>
             </div>
@@ -414,74 +425,45 @@ export default function Home() {
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                {entryStatusOptions.map((status) => (
+                {workspaceMode === "trash" ? (
                   <button
-                    key={status}
-                    onClick={() => handleBulkStatusChange(status)}
+                    onClick={handleBulkRestore}
                     disabled={selectedVisibleEntryIds.length === 0}
                     className="rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Move to {status}
+                    Restore Selected
                   </button>
-                ))}
+                ) : (
+                  <>
+                    {entryStatusOptions.map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => handleBulkStatusChange(status)}
+                        disabled={selectedVisibleEntryIds.length === 0}
+                        className="rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Move to {status}
+                      </button>
+                    ))}
 
-                <button
-                  onClick={handleBulkDelete}
-                  disabled={selectedVisibleEntryIds.length === 0}
-                  className="rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Delete Selected
-                </button>
+                    <button
+                      onClick={handleBulkDelete}
+                      disabled={selectedVisibleEntryIds.length === 0}
+                      className="rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Move to Trash
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
-            {workspaceMode === "review" && (
-              <div className="mb-5 rounded-xl border border-orange-500/20 bg-orange-500/10 p-4">
-                <p className="font-black text-orange-300">
-                  Review Queue Rules
-                </p>
-                <p className="mt-2 text-sm text-orange-100/80">
-                  Entries appear here if they are marked Needs Review, if a
-                  meaning is marked Needs Review, or if important fields like
-                  definition, example, plain English, tone, category, or usage
-                  frequency are missing.
-                </p>
-              </div>
-            )}
-
-            {workspaceMode === "draft" && (
-              <div className="mb-5 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4">
-                <p className="font-black text-yellow-300">Draft Queue Rules</p>
-                <p className="mt-2 text-sm text-yellow-100/80">
-                  Entries appear here if the entry status is Draft or one of its
-                  meanings is still marked Draft. Use this queue for early
-                  cleanup before moving entries into review.
-                </p>
-              </div>
-            )}
-
-            {workspaceMode === "publish" && (
-              <div className="mb-5 rounded-xl border border-green-500/20 bg-green-500/10 p-4">
-                <p className="font-black text-green-300">
-                  Publish Queue Rules
-                </p>
-                <p className="mt-2 text-sm text-green-100/80">
-                  Entries appear here when their status is Verified. Use this
-                  queue to do a final check before moving them to Published.
-                </p>
-              </div>
-            )}
-
-            {workspaceMode === "duplicates" && (
+            {workspaceMode === "trash" && (
               <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
-                <p className="font-black text-red-300">
-                  Duplicate Detection Rules
-                </p>
+                <p className="font-black text-red-300">Trash Rules</p>
                 <p className="mt-2 text-sm text-red-100/80">
-                  Entries appear here when another entry has the same normalized
-                  word, slug, or alternate spelling. This does not delete
-                  anything automatically — it only helps you review possible
-                  duplicates.
+                  Deleted entries appear here instead of being permanently
+                  removed. Restore them to bring them back into the CMS.
                 </p>
               </div>
             )}
@@ -492,7 +474,9 @@ export default function Home() {
               </div>
             ) : visibleEntries.length === 0 ? (
               <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-neutral-500">
-                {workspaceMode === "review"
+                {workspaceMode === "trash"
+                  ? "Trash is empty."
+                  : workspaceMode === "review"
                   ? "No review items. Everything in this view looks clean."
                   : workspaceMode === "draft"
                   ? "No draft items. Everything has moved beyond draft."
@@ -517,6 +501,8 @@ export default function Home() {
                     duplicateMatches={
                       duplicateMatchesByEntryId.get(entry.id) ?? []
                     }
+                    isDeleted={workspaceMode === "trash"}
+                    onRestore={() => handleRestoreEntry(entry.id)}
                   />
                 ))}
               </div>
@@ -524,7 +510,7 @@ export default function Home() {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio Alpha · 2.9.1 Bulk Delete
+            YERRR Studio Alpha · 2.10 Undo Delete / Trash
           </footer>
         </div>
       </section>

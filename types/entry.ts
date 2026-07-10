@@ -53,6 +53,8 @@ export type Entry = {
   illustrationNotes: string;
   notes: string;
   updatedAt: string;
+  deletedAt: string;
+  deletedPreviousStatus: EntryStatus | "";
   meanings: Meaning[];
 };
 

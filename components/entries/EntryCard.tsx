@@ -119,6 +119,8 @@ export function EntryCard({
   isSelected,
   onToggleSelected,
   duplicateMatches = [],
+  isDeleted = false,
+  onRestore,
 }: {
   entry: Entry;
   onOpen: () => void;
@@ -126,6 +128,8 @@ export function EntryCard({
   isSelected: boolean;
   onToggleSelected: () => void;
   duplicateMatches?: string[];
+  isDeleted?: boolean;
+  onRestore?: () => void;
 }) {
   const reviewReasons = getReviewReasons(entry);
   const reviewScore = getEntryReviewScore(entry);
@@ -137,6 +141,8 @@ export function EntryCard({
       className={`rounded-2xl border p-5 transition ${
         isSelected
           ? "border-yellow-400 bg-yellow-400/10"
+          : isDeleted
+          ? "border-red-500/30 bg-red-500/5"
           : "border-neutral-800 bg-neutral-950 hover:border-yellow-400/60"
       }`}
     >
@@ -159,25 +165,31 @@ export function EntryCard({
             <h3 className="text-2xl font-black">{entry.word}</h3>
             <StatusBadge status={entry.status} />
 
+            {isDeleted && (
+              <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-300">
+                In Trash
+              </span>
+            )}
+
             {entry.featured && (
               <span className="rounded-full bg-yellow-400 px-3 py-1 text-xs font-black uppercase tracking-wide text-black">
                 Featured
               </span>
             )}
 
-            {reviewReasons.length > 0 && (
+            {!isDeleted && reviewReasons.length > 0 && (
               <span className="rounded-full bg-orange-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-orange-300">
                 Missing Fields
               </span>
             )}
 
-            {hasDuplicateMatches && (
+            {!isDeleted && hasDuplicateMatches && (
               <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-300">
                 Potential Duplicate
               </span>
             )}
 
-            {entry.status === "Verified" && (
+            {!isDeleted && entry.status === "Verified" && (
               <span className="rounded-full bg-green-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-green-300">
                 Ready to Publish
               </span>
@@ -196,7 +208,24 @@ export function EntryCard({
             </p>
           )}
 
-          {hasDuplicateMatches && (
+          {isDeleted && (
+            <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+              <p className="text-sm font-black text-red-300">Trash Info</p>
+              <p className="mt-2 text-sm text-red-100/80">
+                Deleted on{" "}
+                {entry.deletedAt
+                  ? new Date(entry.deletedAt).toLocaleString()
+                  : "unknown date"}
+                . Restore will return it to{" "}
+                <span className="font-black">
+                  {entry.deletedPreviousStatus || "Draft"}
+                </span>
+                .
+              </p>
+            </div>
+          )}
+
+          {!isDeleted && hasDuplicateMatches && (
             <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
               <p className="text-sm font-black text-red-300">
                 Potential Duplicates
@@ -208,25 +237,27 @@ export function EntryCard({
             </div>
           )}
 
-          <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-black text-neutral-300">
-                Review Completion
-              </p>
-              <p className="text-sm font-black text-yellow-400">
-                {reviewScore}%
-              </p>
-            </div>
+          {!isDeleted && (
+            <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-black text-neutral-300">
+                  Review Completion
+                </p>
+                <p className="text-sm font-black text-yellow-400">
+                  {reviewScore}%
+                </p>
+              </div>
 
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-800">
-              <div
-                className="h-full rounded-full bg-yellow-400"
-                style={{ width: `${reviewScore}%` }}
-              />
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-800">
+                <div
+                  className="h-full rounded-full bg-yellow-400"
+                  style={{ width: `${reviewScore}%` }}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          {reviewReasons.length > 0 && (
+          {!isDeleted && reviewReasons.length > 0 && (
             <div className="mt-4 rounded-xl border border-orange-500/20 bg-orange-500/10 p-4">
               <p className="text-sm font-black text-orange-300">
                 Review Needs
@@ -279,34 +310,55 @@ export function EntryCard({
         </button>
 
         <div className="flex flex-col gap-3 md:w-56">
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-            <p className="text-xs font-black uppercase tracking-wide text-neutral-500">
-              Workflow
-            </p>
+          {isDeleted ? (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-red-300">
+                Trash
+              </p>
 
-            <button
-              onClick={() => onStatusChange(workflowAction.nextStatus)}
-              className="mt-3 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300"
-            >
-              {workflowAction.label}
-            </button>
+              <button
+                onClick={onRestore}
+                className="mt-3 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300"
+              >
+                Restore Entry
+              </button>
 
-            <p className="mt-2 text-xs text-neutral-500">
-              {workflowAction.helper}
-            </p>
-          </div>
+              <p className="mt-2 text-xs text-red-100/70">
+                This brings the entry back into the active CMS.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-neutral-500">
+                  Workflow
+                </p>
 
-          <select
-            value={entry.status}
-            onChange={(event) =>
-              onStatusChange(event.target.value as EntryStatus)
-            }
-            className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-bold text-white outline-none focus:border-yellow-400"
-          >
-            {entryStatusOptions.map((status) => (
-              <option key={status}>{status}</option>
-            ))}
-          </select>
+                <button
+                  onClick={() => onStatusChange(workflowAction.nextStatus)}
+                  className="mt-3 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300"
+                >
+                  {workflowAction.label}
+                </button>
+
+                <p className="mt-2 text-xs text-neutral-500">
+                  {workflowAction.helper}
+                </p>
+              </div>
+
+              <select
+                value={entry.status}
+                onChange={(event) =>
+                  onStatusChange(event.target.value as EntryStatus)
+                }
+                className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-bold text-white outline-none focus:border-yellow-400"
+              >
+                {entryStatusOptions.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+            </>
+          )}
 
           <button
             onClick={onOpen}
