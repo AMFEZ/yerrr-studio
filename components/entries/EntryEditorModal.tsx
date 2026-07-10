@@ -8,10 +8,12 @@ export function EntryEditorModal({
   entry,
   onClose,
   onSave,
+  onDelete,
 }: {
   entry: Entry;
   onClose: () => void;
   onSave: (entry: Entry) => void;
+  onDelete: (id: string) => void;
 }) {
   const [draft, setDraft] = useState<Entry>(entry);
 
@@ -207,18 +209,26 @@ export function EntryEditorModal({
           />
         </Field>
 
-        <div className="mt-6 flex gap-3">
+        <div className="mt-6 flex flex-col gap-3 md:flex-row">
           <button
             onClick={() => onSave(draft)}
             className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-black hover:bg-yellow-300"
           >
             Save Changes
           </button>
+
           <button
             onClick={onClose}
             className="flex-1 rounded-xl bg-neutral-800 px-4 py-3 font-bold text-white hover:bg-neutral-700"
           >
             Cancel
+          </button>
+
+          <button
+            onClick={() => onDelete(draft.id)}
+            className="rounded-xl bg-red-600 px-4 py-3 font-black text-white hover:bg-red-500"
+          >
+            Delete Entry
           </button>
         </div>
       </div>

@@ -18,16 +18,23 @@ export default function Home() {
     addEntry,
     updateEntry,
     updateStatus,
+    deleteEntry,
     draftCount,
     publishedCount,
     reviewCount,
+    isLoading,
   } = useEntries();
 
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
 
-  function handleSaveEntry(updatedEntry: Entry) {
-    updateEntry(updatedEntry);
+  async function handleSaveEntry(updatedEntry: Entry) {
+    await updateEntry(updatedEntry);
+    setSelectedEntry(null);
+  }
+
+  async function handleDeleteEntry(id: string) {
+    await deleteEntry(id);
     setSelectedEntry(null);
   }
 
@@ -70,7 +77,7 @@ export default function Home() {
               <div>
                 <h2 className="text-xl font-bold">Entry Workspace</h2>
                 <p className="text-sm text-neutral-500">
-                  Search, open, and edit captured slang.
+                  Search, open, edit, and delete captured slang.
                 </p>
               </div>
 
@@ -82,7 +89,11 @@ export default function Home() {
               />
             </div>
 
-            {filteredEntries.length === 0 ? (
+            {isLoading ? (
+              <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-neutral-500">
+                Loading entries...
+              </div>
+            ) : filteredEntries.length === 0 ? (
               <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-neutral-500">
                 {entries.length === 0
                   ? "No entries yet. Capture your first word."
@@ -103,7 +114,7 @@ export default function Home() {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio Alpha · 1.1 Workspace Layout
+            YERRR Studio Alpha · 2.2 Delete Entry
           </footer>
         </div>
       </section>
@@ -120,6 +131,7 @@ export default function Home() {
           entry={selectedEntry}
           onClose={() => setSelectedEntry(null)}
           onSave={handleSaveEntry}
+          onDelete={handleDeleteEntry}
         />
       )}
     </main>

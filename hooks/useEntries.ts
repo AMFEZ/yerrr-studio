@@ -7,8 +7,8 @@ import type { Entry, EntryStatus, Meaning } from "@/types/entry";
 type EntryRow = {
   id: string;
   word: string;
-  type: string;
-  status: EntryStatus | string | null;
+  type: string | null;
+  status: string | null;
   notes: string | null;
 };
 
@@ -20,6 +20,12 @@ type MeaningRow = {
   definition: string | null;
   example: string | null;
 };
+
+function normalizeStatus(status: string | null): EntryStatus {
+  if (status === "Published") return "Published";
+  if (status === "Needs Review") return "Needs Review";
+  return "Draft";
+}
 
 export function useEntries() {
   const supabase = createClient();
@@ -37,12 +43,10 @@ export function useEntries() {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      console.log("No logged-in user found.");
+      setEntries([]);
       setIsLoading(false);
       return;
     }
-
-    console.log("Logged in user:", user.id);
 
     const { data: entryRows, error: entryError } = await supabase
       .from("entries")
@@ -51,7 +55,6 @@ export function useEntries() {
       .order("created_at", { ascending: false });
 
     if (entryError) {
-      console.error("Entry load error:", entryError);
       alert(entryError.message);
       setIsLoading(false);
       return;
@@ -72,7 +75,6 @@ export function useEntries() {
       .order("meaning_order", { ascending: true });
 
     if (meaningError) {
-      console.error("Meaning load error:", meaningError);
       alert(meaningError.message);
       setIsLoading(false);
       return;
@@ -81,13 +83,8 @@ export function useEntries() {
     const mappedEntries: Entry[] = (entryRows as EntryRow[]).map((entry) => ({
       id: entry.id,
       word: entry.word,
-      type: entry.type || "Word",
-      status:
-        entry.status === "Published" ||
-        entry.status === "Needs Review" ||
-        entry.status === "Draft"
-          ? entry.status
-          : "Draft",
+      type: entry.type ?? "Word",
+      status: normalizeStatus(entry.status),
       notes: entry.notes ?? "",
       meanings: (meaningRows as MeaningRow[])
         .filter((meaning) => meaning.entry_id === entry.id)
@@ -99,8 +96,6 @@ export function useEntries() {
         })),
     }));
 
-    console.log("Loaded entries:", mappedEntries.length);
-
     setEntries(mappedEntries);
     setIsLoading(false);
   }
@@ -110,9 +105,21 @@ export function useEntries() {
   }, []);
 
   const filteredEntries = useMemo(() => {
-    return entries.filter((entry) =>
-      entry.word.toLowerCase().includes(search.toLowerCase())
-    );
+    return entries.filter((entry) => {
+      const query = search.toLowerCase();
+
+      return (
+        entry.word.toLowerCase().includes(query) ||
+        entry.type.toLowerCase().includes(query) ||
+        entry.notes.toLowerCase().includes(query) ||
+        entry.meanings.some(
+          (meaning) =>
+            meaning.title.toLowerCase().includes(query) ||
+            meaning.definition.toLowerCase().includes(query) ||
+            meaning.example.toLowerCase().includes(query)
+        )
+      );
+    });
   }, [entries, search]);
 
   const draftCount = entries.filter((entry) => entry.status === "Draft").length;
@@ -144,7 +151,7 @@ export function useEntries() {
         status: "Draft",
         notes: "",
       })
-      .select()
+      .select("id")
       .single();
 
     if (entryError) {
@@ -183,6 +190,37 @@ export function useEntries() {
     if (entryError) {
       alert(entryError.message);
       return;
+    }
+
+    const { data: existingMeanings, error: existingMeaningError } =
+      await supabase
+        .from("meanings")
+        .select("id")
+        .eq("entry_id", updatedEntry.id);
+
+    if (existingMeaningError) {
+      alert(existingMeaningError.message);
+      return;
+    }
+
+    const keptMeaningIds = updatedEntry.meanings
+      .filter((meaning) => !meaning.id.startsWith("temp-"))
+      .map((meaning) => meaning.id);
+
+    const meaningIdsToDelete = (existingMeanings ?? [])
+      .map((meaning) => meaning.id)
+      .filter((id) => !keptMeaningIds.includes(id));
+
+    if (meaningIdsToDelete.length > 0) {
+      const { error: deleteMeaningsError } = await supabase
+        .from("meanings")
+        .delete()
+        .in("id", meaningIdsToDelete);
+
+      if (deleteMeaningsError) {
+        alert(deleteMeaningsError.message);
+        return;
+      }
     }
 
     for (let index = 0; index < updatedEntry.meanings.length; index++) {
@@ -240,6 +278,23 @@ export function useEntries() {
     await loadEntries();
   }
 
+  async function deleteEntry(id: string) {
+    const confirmed = window.confirm(
+      "Delete this entry? This will also delete all meanings attached to it."
+    );
+
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("entries").delete().eq("id", id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadEntries();
+  }
+
   return {
     entries,
     filteredEntries,
@@ -248,6 +303,7 @@ export function useEntries() {
     addEntry,
     updateEntry,
     updateStatus,
+    deleteEntry,
     draftCount,
     publishedCount,
     reviewCount,
