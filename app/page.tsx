@@ -9,7 +9,7 @@ import { EntryCard } from "@/components/entries/EntryCard";
 import { CaptureModal } from "@/components/entries/CaptureModal";
 import { EntryEditorModal } from "@/components/entries/EntryEditorModal";
 
-type WorkspaceMode = "all" | "review" | "draft";
+type WorkspaceMode = "all" | "review" | "draft" | "publish";
 
 function isDraftQueueEntry(entry: Entry) {
   if (entry.status === "Draft") return true;
@@ -17,6 +17,10 @@ function isDraftQueueEntry(entry: Entry) {
   return entry.meanings.some(
     (meaning) => meaning.editorialStatus === "Draft"
   );
+}
+
+function isPublishQueueEntry(entry: Entry) {
+  return entry.status === "Verified";
 }
 
 export default function Home() {
@@ -33,7 +37,7 @@ export default function Home() {
     draftCount,
     reviewQueueCount,
     verifiedCount,
-    archivedCount,
+    publishedCount,
     isLoading,
   } = useEntries();
 
@@ -45,11 +49,17 @@ export default function Home() {
     return filteredEntries.filter(isDraftQueueEntry);
   }, [filteredEntries]);
 
+  const filteredPublishQueueEntries = useMemo(() => {
+    return filteredEntries.filter(isPublishQueueEntry);
+  }, [filteredEntries]);
+
   const visibleEntries =
     workspaceMode === "review"
       ? filteredReviewQueueEntries
       : workspaceMode === "draft"
       ? filteredDraftQueueEntries
+      : workspaceMode === "publish"
+      ? filteredPublishQueueEntries
       : filteredEntries;
 
   const handleSaveEntry = useCallback(
@@ -80,6 +90,8 @@ export default function Home() {
       ? "Review Queue"
       : workspaceMode === "draft"
       ? "Draft Queue"
+      : workspaceMode === "publish"
+      ? "Publish Queue"
       : "Entry Workspace";
 
   const workspaceDescription =
@@ -87,7 +99,9 @@ export default function Home() {
       ? "Focus only on entries that need editorial work."
       : workspaceMode === "draft"
       ? "Focus only on unfinished draft entries before they move into review."
-      : "Search, open, edit, autosave, verify, and delete captured slang.";
+      : workspaceMode === "publish"
+      ? "Focus only on verified entries that are ready to publish."
+      : "Search, open, edit, autosave, verify, publish, and delete captured slang.";
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white lg:flex">
@@ -118,10 +132,10 @@ export default function Home() {
           </header>
 
           <section className="grid gap-4 md:grid-cols-4">
-            <StatCard emoji="✅" label="Verified Entries" value={verifiedCount} />
+            <StatCard emoji="✅" label="Verified / Ready" value={verifiedCount} />
             <StatCard emoji="✍️" label="Draft Queue" value={draftCount} />
             <StatCard emoji="🧐" label="Review Queue" value={reviewQueueCount} />
-            <StatCard emoji="📦" label="Archived" value={archivedCount} />
+            <StatCard emoji="🚀" label="Published" value={publishedCount} />
           </section>
 
           <section className="mt-10 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
@@ -175,6 +189,17 @@ export default function Home() {
                 >
                   Draft Queue
                 </button>
+
+                <button
+                  onClick={() => setWorkspaceMode("publish")}
+                  className={`rounded-lg px-4 py-2 text-sm font-black ${
+                    workspaceMode === "publish"
+                      ? "bg-yellow-400 text-black"
+                      : "text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  Publish Queue
+                </button>
               </div>
 
               <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-400">
@@ -207,8 +232,20 @@ export default function Home() {
                 <p className="font-black text-yellow-300">Draft Queue Rules</p>
                 <p className="mt-2 text-sm text-yellow-100/80">
                   Entries appear here if the entry status is Draft or one of its
-                  meanings is still marked Draft. Use this queue for early cleanup
-                  before moving entries into review.
+                  meanings is still marked Draft. Use this queue for early
+                  cleanup before moving entries into review.
+                </p>
+              </div>
+            )}
+
+            {workspaceMode === "publish" && (
+              <div className="mb-5 rounded-xl border border-green-500/20 bg-green-500/10 p-4">
+                <p className="font-black text-green-300">
+                  Publish Queue Rules
+                </p>
+                <p className="mt-2 text-sm text-green-100/80">
+                  Entries appear here when their status is Verified. Use this
+                  queue to do a final check before moving them to Published.
                 </p>
               </div>
             )}
@@ -223,6 +260,8 @@ export default function Home() {
                   ? "No review items. Everything in this view looks clean."
                   : workspaceMode === "draft"
                   ? "No draft items. Everything has moved beyond draft."
+                  : workspaceMode === "publish"
+                  ? "No verified entries ready to publish yet."
                   : entries.length === 0
                   ? "No entries yet. Capture your first word."
                   : "No matching entries found."}
@@ -242,7 +281,7 @@ export default function Home() {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio Alpha · 2.6 Draft Queue
+            YERRR Studio Alpha · 2.7 Publish Workflow
           </footer>
         </div>
       </section>

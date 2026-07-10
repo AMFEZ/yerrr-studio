@@ -68,6 +68,50 @@ function getEntryReviewScore(entry: Entry) {
   return Math.round((completedFields / totalFields) * 100);
 }
 
+function getWorkflowAction(status: EntryStatus): {
+  label: string;
+  nextStatus: EntryStatus;
+  helper: string;
+} {
+  if (status === "Draft") {
+    return {
+      label: "Send to Review",
+      nextStatus: "Needs Review",
+      helper: "Move this draft into the editorial review queue.",
+    };
+  }
+
+  if (status === "Needs Review") {
+    return {
+      label: "Verify Entry",
+      nextStatus: "Verified",
+      helper: "Mark this entry as checked and ready for publishing.",
+    };
+  }
+
+  if (status === "Verified") {
+    return {
+      label: "Publish Entry",
+      nextStatus: "Published",
+      helper: "Make this entry part of the published lexicon.",
+    };
+  }
+
+  if (status === "Published") {
+    return {
+      label: "Archive Entry",
+      nextStatus: "Archived",
+      helper: "Remove this from active publishing without deleting it.",
+    };
+  }
+
+  return {
+    label: "Restore Draft",
+    nextStatus: "Draft",
+    helper: "Bring this archived entry back into editing.",
+  };
+}
+
 export function EntryCard({
   entry,
   onOpen,
@@ -79,6 +123,7 @@ export function EntryCard({
 }) {
   const reviewReasons = getReviewReasons(entry);
   const reviewScore = getEntryReviewScore(entry);
+  const workflowAction = getWorkflowAction(entry.status);
 
   return (
     <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-yellow-400/60">
@@ -97,6 +142,12 @@ export function EntryCard({
             {reviewReasons.length > 0 && (
               <span className="rounded-full bg-orange-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-orange-300">
                 Review Needed
+              </span>
+            )}
+
+            {entry.status === "Verified" && (
+              <span className="rounded-full bg-green-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-green-300">
+                Ready to Publish
               </span>
             )}
           </div>
@@ -183,7 +234,24 @@ export function EntryCard({
           )}
         </button>
 
-        <div className="flex flex-col gap-3 md:w-48">
+        <div className="flex flex-col gap-3 md:w-56">
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-neutral-500">
+              Workflow
+            </p>
+
+            <button
+              onClick={() => onStatusChange(workflowAction.nextStatus)}
+              className="mt-3 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300"
+            >
+              {workflowAction.label}
+            </button>
+
+            <p className="mt-2 text-xs text-neutral-500">
+              {workflowAction.helper}
+            </p>
+          </div>
+
           <select
             value={entry.status}
             onChange={(event) =>
