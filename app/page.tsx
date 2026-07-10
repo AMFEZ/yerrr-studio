@@ -20,8 +20,9 @@ export default function Home() {
     updateStatus,
     deleteEntry,
     draftCount,
-    publishedCount,
     reviewCount,
+    verifiedCount,
+    archivedCount,
     isLoading,
   } = useEntries();
 
@@ -53,7 +54,8 @@ export default function Home() {
                 The NYC Slang Lexicon
               </h1>
               <p className="mt-4 max-w-2xl text-neutral-400">
-                Capture, review, and publish the living language of New York City.
+                Capture, review, verify, and publish the living language of New
+                York City.
               </p>
             </div>
 
@@ -66,10 +68,10 @@ export default function Home() {
           </header>
 
           <section className="grid gap-4 md:grid-cols-4">
-            <StatCard emoji="📖" label="Published Lexicon" value={publishedCount} />
+            <StatCard emoji="✅" label="Verified Entries" value={verifiedCount} />
             <StatCard emoji="✍️" label="Captured Drafts" value={draftCount} />
-            <StatCard emoji="🧐" label="Editorial Queue" value={reviewCount} />
-            <StatCard emoji="📚" label="Total Entries" value={entries.length} />
+            <StatCard emoji="🧐" label="Review Queue" value={reviewCount} />
+            <StatCard emoji="📦" label="Archived" value={archivedCount} />
           </section>
 
           <section className="mt-10 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
@@ -77,7 +79,7 @@ export default function Home() {
               <div>
                 <h2 className="text-xl font-bold">Entry Workspace</h2>
                 <p className="text-sm text-neutral-500">
-                  Search, open, edit, and delete captured slang.
+                  Search, open, edit, verify, and delete captured slang.
                 </p>
               </div>
 
@@ -87,6 +89,11 @@ export default function Home() {
                 placeholder="Search deadass, brick, ocky..."
                 className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400 md:max-w-sm"
               />
+            </div>
+
+            <div className="mb-4 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm text-neutral-400">
+              Total Entries:{" "}
+              <span className="font-black text-white">{entries.length}</span>
             </div>
 
             {isLoading ? (
@@ -114,7 +121,7 @@ export default function Home() {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio Alpha · 2.2 Delete Entry
+            YERRR Studio Alpha · 2.3 Full Lexicon V8 Editor
           </footer>
         </div>
       </section>
