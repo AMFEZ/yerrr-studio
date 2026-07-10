@@ -171,6 +171,23 @@ function escapeCsvValue(value: unknown) {
   return `"${escapedValue}"`;
 }
 
+function getStringField(
+  object: Record<string, unknown> | undefined,
+  keys: string[]
+) {
+  if (!object) return "";
+
+  for (const key of keys) {
+    const value = object[key];
+
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+
+  return "";
+}
+
 function entriesToCsv(entries: Entry[]) {
   const headers = [
     "id",
@@ -186,7 +203,9 @@ function entriesToCsv(entries: Entry[]) {
   ];
 
   const rows = entries.map((entry) => {
-    const firstMeaning = entry.meanings[0];
+    const firstMeaning = entry.meanings[0] as
+      | Record<string, unknown>
+      | undefined;
 
     return [
       entry.id,
@@ -195,9 +214,21 @@ function entriesToCsv(entries: Entry[]) {
       entry.status,
       entry.pronunciation,
       entry.alternateSpellings,
-      firstMeaning?.partOfSpeech ?? "",
-      firstMeaning?.definition ?? "",
-      firstMeaning?.exampleSentence ?? "",
+      getStringField(firstMeaning, [
+        "partOfSpeech",
+        "part_of_speech",
+        "pos",
+        "type",
+        "grammar",
+      ]),
+      getStringField(firstMeaning, ["definition", "meaning", "gloss"]),
+      getStringField(firstMeaning, [
+        "exampleSentence",
+        "example_sentence",
+        "example",
+        "usageExample",
+        "usage_example",
+      ]),
       entry.meanings.length,
     ].map(escapeCsvValue);
   });
@@ -483,24 +514,40 @@ export default function Home() {
   }
 
   const handleCreateEntry = useCallback(
-    async function handleCreateEntry(newEntry: Entry) {
-      await runWithLoading(
-        "Saving new entry...",
-        async () => {
-          await addEntry(newEntry);
-          setIsCaptureOpen(false);
-          addActivity(
-            "create",
-            "Entry captured",
-            `${newEntry.word} was added to the lexicon.`
-          );
-        },
-        "Entry captured",
-        `${newEntry.word} was added to the lexicon.`
-      );
-    },
-    [addEntry]
-  );
+  async function handleCreateEntry(...addEntryArgs: Parameters<typeof addEntry>) {
+    const possibleEntry = addEntryArgs[0] as unknown;
+
+let createdWord = "New entry";
+
+if (typeof possibleEntry === "string" && possibleEntry.trim()) {
+  createdWord = possibleEntry;
+}
+
+if (typeof possibleEntry === "object" && possibleEntry !== null) {
+  const possibleEntryRecord = possibleEntry as Record<string, unknown>;
+
+  if (typeof possibleEntryRecord.word === "string") {
+    createdWord = possibleEntryRecord.word;
+  }
+}
+
+    await runWithLoading(
+      "Saving new entry...",
+      async () => {
+        await addEntry(...addEntryArgs);
+        setIsCaptureOpen(false);
+        addActivity(
+          "create",
+          "Entry captured",
+          `${createdWord} was added to the lexicon.`
+        );
+      },
+      "Entry captured",
+      `${createdWord} was added to the lexicon.`
+    );
+  },
+  [addEntry]
+);
 
   const handleSaveEntry = useCallback(
     async function handleSaveEntry(updatedEntry: Entry) {
