@@ -116,17 +116,40 @@ export function EntryCard({
   entry,
   onOpen,
   onStatusChange,
+  isSelected,
+  onToggleSelected,
 }: {
   entry: Entry;
   onOpen: () => void;
   onStatusChange: (status: EntryStatus) => void;
+  isSelected: boolean;
+  onToggleSelected: () => void;
 }) {
   const reviewReasons = getReviewReasons(entry);
   const reviewScore = getEntryReviewScore(entry);
   const workflowAction = getWorkflowAction(entry.status);
 
   return (
-    <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-yellow-400/60">
+    <div
+      className={`rounded-2xl border p-5 transition ${
+        isSelected
+          ? "border-yellow-400 bg-yellow-400/10"
+          : "border-neutral-800 bg-neutral-950 hover:border-yellow-400/60"
+      }`}
+    >
+      <div className="mb-4 flex items-center gap-3 border-b border-neutral-800 pb-4">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelected}
+          className="h-5 w-5 accent-yellow-400"
+        />
+
+        <p className="text-sm font-black text-neutral-300">
+          Select for bulk actions
+        </p>
+      </div>
+
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <button onClick={onOpen} className="flex-1 text-left">
           <div className="flex flex-wrap items-center gap-3">
@@ -140,10 +163,10 @@ export function EntryCard({
             )}
 
             {reviewReasons.length > 0 && (
-              <span className="rounded-full bg-orange-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-orange-300">
-                Review Needed
-              </span>
-            )}
+  <span className="rounded-full bg-orange-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-orange-300">
+    Missing Fields
+  </span>
+)}
 
             {entry.status === "Verified" && (
               <span className="rounded-full bg-green-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-green-300">

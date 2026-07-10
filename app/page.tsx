@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { Entry } from "@/types/entry";
+import type { Entry, EntryStatus } from "@/types/entry";
+import { entryStatusOptions } from "@/types/entry";
 import { useEntries } from "@/hooks/useEntries";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -33,6 +34,7 @@ export default function Home() {
     addEntry,
     updateEntry,
     updateStatus,
+    updateEntriesStatus,
     deleteEntry,
     draftCount,
     reviewQueueCount,
@@ -44,6 +46,7 @@ export default function Home() {
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("all");
+  const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
 
   const filteredDraftQueueEntries = useMemo(() => {
     return filteredEntries.filter(isDraftQueueEntry);
@@ -61,6 +64,18 @@ export default function Home() {
       : workspaceMode === "publish"
       ? filteredPublishQueueEntries
       : filteredEntries;
+
+  const visibleEntryIds = useMemo(() => {
+    return visibleEntries.map((entry) => entry.id);
+  }, [visibleEntries]);
+
+  const selectedVisibleEntryIds = useMemo(() => {
+    return selectedEntryIds.filter((id) => visibleEntryIds.includes(id));
+  }, [selectedEntryIds, visibleEntryIds]);
+
+  const allVisibleSelected =
+    visibleEntryIds.length > 0 &&
+    visibleEntryIds.every((id) => selectedEntryIds.includes(id));
 
   const handleSaveEntry = useCallback(
     async function handleSaveEntry(updatedEntry: Entry) {
@@ -81,9 +96,52 @@ export default function Home() {
     async function handleDeleteEntry(id: string) {
       await deleteEntry(id);
       setSelectedEntry(null);
+      setSelectedEntryIds((currentIds) =>
+        currentIds.filter((entryId) => entryId !== id)
+      );
     },
     [deleteEntry]
   );
+
+  function toggleEntrySelection(id: string) {
+    setSelectedEntryIds((currentIds) =>
+      currentIds.includes(id)
+        ? currentIds.filter((entryId) => entryId !== id)
+        : [...currentIds, id]
+    );
+  }
+
+  function selectAllVisibleEntries() {
+    setSelectedEntryIds((currentIds) => {
+      const mergedIds = new Set([...currentIds, ...visibleEntryIds]);
+      return Array.from(mergedIds);
+    });
+  }
+
+  function deselectVisibleEntries() {
+    setSelectedEntryIds((currentIds) =>
+      currentIds.filter((id) => !visibleEntryIds.includes(id))
+    );
+  }
+
+  function clearSelectedEntries() {
+    setSelectedEntryIds([]);
+  }
+
+  async function handleBulkStatusChange(status: EntryStatus) {
+    if (selectedVisibleEntryIds.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Move ${selectedVisibleEntryIds.length} selected entr${
+        selectedVisibleEntryIds.length === 1 ? "y" : "ies"
+      } to ${status}?`
+    );
+
+    if (!confirmed) return;
+
+    await updateEntriesStatus(selectedVisibleEntryIds, status);
+    setSelectedEntryIds([]);
+  }
 
   const workspaceTitle =
     workspaceMode === "review"
@@ -213,6 +271,55 @@ export default function Home() {
               </div>
             </div>
 
+            <div className="mb-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="font-black text-white">Bulk Actions</p>
+                  <p className="mt-1 text-sm text-neutral-500">
+                    Selected in this view:{" "}
+                    <span className="font-black text-yellow-400">
+                      {selectedVisibleEntryIds.length}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={
+                      allVisibleSelected
+                        ? deselectVisibleEntries
+                        : selectAllVisibleEntries
+                    }
+                    disabled={visibleEntries.length === 0}
+                    className="rounded-xl bg-neutral-800 px-4 py-3 text-sm font-black text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {allVisibleSelected ? "Deselect Visible" : "Select Visible"}
+                  </button>
+
+                  <button
+                    onClick={clearSelectedEntries}
+                    disabled={selectedEntryIds.length === 0}
+                    className="rounded-xl bg-neutral-800 px-4 py-3 text-sm font-black text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {entryStatusOptions.map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => handleBulkStatusChange(status)}
+                    disabled={selectedVisibleEntryIds.length === 0}
+                    className="rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Move to {status}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {workspaceMode === "review" && (
               <div className="mb-5 rounded-xl border border-orange-500/20 bg-orange-500/10 p-4">
                 <p className="font-black text-orange-300">
@@ -274,6 +381,8 @@ export default function Home() {
                     entry={entry}
                     onOpen={() => setSelectedEntry(entry)}
                     onStatusChange={(status) => updateStatus(entry.id, status)}
+                    isSelected={selectedEntryIds.includes(entry.id)}
+                    onToggleSelected={() => toggleEntrySelection(entry.id)}
                   />
                 ))}
               </div>
@@ -281,7 +390,7 @@ export default function Home() {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio Alpha · 2.7 Publish Workflow
+            YERRR Studio Alpha · 2.8 Bulk Actions
           </footer>
         </div>
       </section>

@@ -528,6 +528,28 @@ export function useEntries() {
     [loadEntries, supabase]
   );
 
+  const updateEntriesStatus = useCallback(
+    async function updateEntriesStatus(ids: string[], status: EntryStatus) {
+      if (ids.length === 0) return;
+
+      const { error } = await supabase
+        .from("entries")
+        .update({
+          status,
+          updated_at: new Date().toISOString(),
+        })
+        .in("id", ids);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
+
   const deleteEntry = useCallback(
     async function deleteEntry(id: string) {
       const confirmed = window.confirm(
@@ -558,6 +580,7 @@ export function useEntries() {
     addEntry,
     updateEntry,
     updateStatus,
+    updateEntriesStatus,
     deleteEntry,
     draftCount,
     needsReviewStatusCount,
