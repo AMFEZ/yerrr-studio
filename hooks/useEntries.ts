@@ -570,6 +570,22 @@ export function useEntries() {
     [loadEntries, supabase]
   );
 
+  const deleteEntries = useCallback(
+    async function deleteEntries(ids: string[]) {
+      if (ids.length === 0) return;
+
+      const { error } = await supabase.from("entries").delete().in("id", ids);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
+
   return {
     entries,
     filteredEntries,
@@ -582,6 +598,7 @@ export function useEntries() {
     updateStatus,
     updateEntriesStatus,
     deleteEntry,
+    deleteEntries,
     draftCount,
     needsReviewStatusCount,
     reviewQueueCount,

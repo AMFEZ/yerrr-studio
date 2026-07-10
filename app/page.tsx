@@ -10,7 +10,67 @@ import { EntryCard } from "@/components/entries/EntryCard";
 import { CaptureModal } from "@/components/entries/CaptureModal";
 import { EntryEditorModal } from "@/components/entries/EntryEditorModal";
 
-type WorkspaceMode = "all" | "review" | "draft" | "publish";
+type WorkspaceMode = "all" | "review" | "draft" | "publish" | "duplicates";
+
+function normalizeDuplicateKey(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getDuplicateKeys(entry: Entry) {
+  const keys = new Set<string>();
+
+  const wordKey = normalizeDuplicateKey(entry.word);
+  const slugKey = normalizeDuplicateKey(entry.slug.replace(/-/g, " "));
+  const alternateKeys = entry.alternateSpellings
+    .split(/[,;/\n]/g)
+    .map((spelling) => normalizeDuplicateKey(spelling))
+    .filter(Boolean);
+
+  if (wordKey) keys.add(wordKey);
+  if (slugKey) keys.add(slugKey);
+
+  alternateKeys.forEach((key) => keys.add(key));
+
+  return Array.from(keys);
+}
+
+function buildDuplicateMatches(entries: Entry[]) {
+  const keyMap = new Map<string, Entry[]>();
+
+  entries.forEach((entry) => {
+    getDuplicateKeys(entry).forEach((key) => {
+      const existing = keyMap.get(key) ?? [];
+      keyMap.set(key, [...existing, entry]);
+    });
+  });
+
+  const duplicateMatches = new Map<string, string[]>();
+
+  keyMap.forEach((matchedEntries) => {
+    if (matchedEntries.length <= 1) return;
+
+    matchedEntries.forEach((entry) => {
+      const otherWords = matchedEntries
+        .filter((matchedEntry) => matchedEntry.id !== entry.id)
+        .map((matchedEntry) => matchedEntry.word);
+
+      const currentMatches = duplicateMatches.get(entry.id) ?? [];
+
+      duplicateMatches.set(
+        entry.id,
+        Array.from(new Set([...currentMatches, ...otherWords]))
+      );
+    });
+  });
+
+  return duplicateMatches;
+}
 
 function isDraftQueueEntry(entry: Entry) {
   if (entry.status === "Draft") return true;
@@ -36,6 +96,7 @@ export default function Home() {
     updateStatus,
     updateEntriesStatus,
     deleteEntry,
+    deleteEntries,
     draftCount,
     reviewQueueCount,
     verifiedCount,
@@ -48,6 +109,10 @@ export default function Home() {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("all");
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
 
+  const duplicateMatchesByEntryId = useMemo(() => {
+    return buildDuplicateMatches(entries);
+  }, [entries]);
+
   const filteredDraftQueueEntries = useMemo(() => {
     return filteredEntries.filter(isDraftQueueEntry);
   }, [filteredEntries]);
@@ -56,6 +121,12 @@ export default function Home() {
     return filteredEntries.filter(isPublishQueueEntry);
   }, [filteredEntries]);
 
+  const filteredDuplicateEntries = useMemo(() => {
+    return filteredEntries.filter((entry) =>
+      duplicateMatchesByEntryId.has(entry.id)
+    );
+  }, [filteredEntries, duplicateMatchesByEntryId]);
+
   const visibleEntries =
     workspaceMode === "review"
       ? filteredReviewQueueEntries
@@ -63,6 +134,8 @@ export default function Home() {
       ? filteredDraftQueueEntries
       : workspaceMode === "publish"
       ? filteredPublishQueueEntries
+      : workspaceMode === "duplicates"
+      ? filteredDuplicateEntries
       : filteredEntries;
 
   const visibleEntryIds = useMemo(() => {
@@ -143,6 +216,21 @@ export default function Home() {
     setSelectedEntryIds([]);
   }
 
+  async function handleBulkDelete() {
+    if (selectedVisibleEntryIds.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Delete ${selectedVisibleEntryIds.length} selected entr${
+        selectedVisibleEntryIds.length === 1 ? "y" : "ies"
+      }? This will also delete their meanings. This cannot be undone yet.`
+    );
+
+    if (!confirmed) return;
+
+    await deleteEntries(selectedVisibleEntryIds);
+    setSelectedEntryIds([]);
+  }
+
   const workspaceTitle =
     workspaceMode === "review"
       ? "Review Queue"
@@ -150,6 +238,8 @@ export default function Home() {
       ? "Draft Queue"
       : workspaceMode === "publish"
       ? "Publish Queue"
+      : workspaceMode === "duplicates"
+      ? "Duplicate Detection"
       : "Entry Workspace";
 
   const workspaceDescription =
@@ -159,6 +249,8 @@ export default function Home() {
       ? "Focus only on unfinished draft entries before they move into review."
       : workspaceMode === "publish"
       ? "Focus only on verified entries that are ready to publish."
+      : workspaceMode === "duplicates"
+      ? "Find possible duplicate entries based on word, slug, and alternate spellings."
       : "Search, open, edit, autosave, verify, publish, and delete captured slang.";
 
   return (
@@ -191,7 +283,11 @@ export default function Home() {
 
           <section className="grid gap-4 md:grid-cols-4">
             <StatCard emoji="✅" label="Verified / Ready" value={verifiedCount} />
-            <StatCard emoji="✍️" label="Draft Queue" value={draftCount} />
+            <StatCard
+              emoji="🧬"
+              label="Possible Duplicates"
+              value={duplicateMatchesByEntryId.size}
+            />
             <StatCard emoji="🧐" label="Review Queue" value={reviewQueueCount} />
             <StatCard emoji="🚀" label="Published" value={publishedCount} />
           </section>
@@ -258,6 +354,17 @@ export default function Home() {
                 >
                   Publish Queue
                 </button>
+
+                <button
+                  onClick={() => setWorkspaceMode("duplicates")}
+                  className={`rounded-lg px-4 py-2 text-sm font-black ${
+                    workspaceMode === "duplicates"
+                      ? "bg-yellow-400 text-black"
+                      : "text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  Duplicates
+                </button>
               </div>
 
               <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-400">
@@ -317,6 +424,14 @@ export default function Home() {
                     Move to {status}
                   </button>
                 ))}
+
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedVisibleEntryIds.length === 0}
+                  className="rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Delete Selected
+                </button>
               </div>
             </div>
 
@@ -357,6 +472,20 @@ export default function Home() {
               </div>
             )}
 
+            {workspaceMode === "duplicates" && (
+              <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+                <p className="font-black text-red-300">
+                  Duplicate Detection Rules
+                </p>
+                <p className="mt-2 text-sm text-red-100/80">
+                  Entries appear here when another entry has the same normalized
+                  word, slug, or alternate spelling. This does not delete
+                  anything automatically — it only helps you review possible
+                  duplicates.
+                </p>
+              </div>
+            )}
+
             {isLoading ? (
               <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-neutral-500">
                 Loading entries...
@@ -369,6 +498,8 @@ export default function Home() {
                   ? "No draft items. Everything has moved beyond draft."
                   : workspaceMode === "publish"
                   ? "No verified entries ready to publish yet."
+                  : workspaceMode === "duplicates"
+                  ? "No potential duplicates found."
                   : entries.length === 0
                   ? "No entries yet. Capture your first word."
                   : "No matching entries found."}
@@ -383,6 +514,9 @@ export default function Home() {
                     onStatusChange={(status) => updateStatus(entry.id, status)}
                     isSelected={selectedEntryIds.includes(entry.id)}
                     onToggleSelected={() => toggleEntrySelection(entry.id)}
+                    duplicateMatches={
+                      duplicateMatchesByEntryId.get(entry.id) ?? []
+                    }
                   />
                 ))}
               </div>
@@ -390,7 +524,7 @@ export default function Home() {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio Alpha · 2.8 Bulk Actions
+            YERRR Studio Alpha · 2.9.1 Bulk Delete
           </footer>
         </div>
       </section>

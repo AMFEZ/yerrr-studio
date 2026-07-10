@@ -118,16 +118,19 @@ export function EntryCard({
   onStatusChange,
   isSelected,
   onToggleSelected,
+  duplicateMatches = [],
 }: {
   entry: Entry;
   onOpen: () => void;
   onStatusChange: (status: EntryStatus) => void;
   isSelected: boolean;
   onToggleSelected: () => void;
+  duplicateMatches?: string[];
 }) {
   const reviewReasons = getReviewReasons(entry);
   const reviewScore = getEntryReviewScore(entry);
   const workflowAction = getWorkflowAction(entry.status);
+  const hasDuplicateMatches = duplicateMatches.length > 0;
 
   return (
     <div
@@ -163,10 +166,16 @@ export function EntryCard({
             )}
 
             {reviewReasons.length > 0 && (
-  <span className="rounded-full bg-orange-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-orange-300">
-    Missing Fields
-  </span>
-)}
+              <span className="rounded-full bg-orange-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-orange-300">
+                Missing Fields
+              </span>
+            )}
+
+            {hasDuplicateMatches && (
+              <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-300">
+                Potential Duplicate
+              </span>
+            )}
 
             {entry.status === "Verified" && (
               <span className="rounded-full bg-green-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-green-300">
@@ -185,6 +194,18 @@ export function EntryCard({
             <p className="mt-2 text-sm text-yellow-300">
               Pronunciation: {entry.pronunciation}
             </p>
+          )}
+
+          {hasDuplicateMatches && (
+            <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+              <p className="text-sm font-black text-red-300">
+                Potential Duplicates
+              </p>
+              <p className="mt-2 text-sm text-red-100/80">
+                This entry may overlap with:{" "}
+                <span className="font-black">{duplicateMatches.join(", ")}</span>
+              </p>
+            </div>
           )}
 
           <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
