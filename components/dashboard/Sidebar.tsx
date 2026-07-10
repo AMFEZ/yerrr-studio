@@ -1,48 +1,102 @@
-const navItems = [
-  { label: "Dashboard", emoji: "🏠" },
-  { label: "Entries", emoji: "📚" },
-  { label: "Concepts", emoji: "🧠" },
-  { label: "Relationships", emoji: "🔗" },
-  { label: "Review Queue", emoji: "🧐" },
-  { label: "AI Assistant", emoji: "🤖" },
-  { label: "Settings", emoji: "⚙️" },
-];
+"use client";
+
+import { createClient } from "@/lib/supabase/client";
 
 export function Sidebar() {
+  const supabase = createClient();
+
+  async function handleLogout() {
+    const confirmed = window.confirm("Log out of YERRR Studio?");
+
+    if (!confirmed) return;
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    window.location.href = "/login";
+  }
+
   return (
-    <aside className="hidden min-h-screen w-72 border-r border-neutral-800 bg-neutral-950 p-6 lg:block">
-      <div>
-        <p className="text-xs font-black uppercase tracking-[0.35em] text-yellow-400">
-          YERRR!!
-        </p>
-        <h1 className="mt-2 text-2xl font-black text-white">Studio</h1>
-        <p className="mt-2 text-sm text-neutral-500">
-          NYC slang editorial system
-        </p>
-      </div>
+    <aside className="border-b border-neutral-800 bg-neutral-950 p-6 lg:min-h-screen lg:w-72 lg:border-b-0 lg:border-r">
+      <div className="sticky top-6">
+        <div className="mb-8">
+          <p className="text-sm font-black uppercase tracking-[0.35em] text-yellow-400">
+            YERRR
+          </p>
 
-      <nav className="mt-10 space-y-2">
-        {navItems.map((item, index) => (
+          <h1 className="mt-2 text-3xl font-black tracking-tight">
+            Studio
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-neutral-500">
+            Your private command center for building the NYC slang lexicon.
+          </p>
+        </div>
+
+        <nav className="space-y-2">
+          <SidebarItem emoji="📚" label="Lexicon" active />
+          <SidebarItem emoji="🧐" label="Review Queue" />
+          <SidebarItem emoji="✍️" label="Drafts" />
+          <SidebarItem emoji="🚀" label="Publishing" />
+          <SidebarItem emoji="🧬" label="Duplicates" />
+          <SidebarItem emoji="🗑️" label="Trash" />
+        </nav>
+
+        <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+          <p className="text-sm font-black text-white">Current Phase</p>
+          <p className="mt-1 text-sm text-neutral-500">
+            Phase 2: CMS Workflow
+          </p>
+
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-neutral-800">
+            <div className="h-full w-[92%] rounded-full bg-yellow-400" />
+          </div>
+
+          <p className="mt-2 text-xs font-bold text-neutral-500">
+            Almost finished with Phase 2.
+          </p>
+        </div>
+
+        <div className="mt-8 space-y-3">
           <button
-            key={item.label}
-            className={`w-full rounded-xl px-4 py-3 text-left font-bold transition ${
-              index === 0
-                ? "bg-yellow-400 text-black"
-                : "text-neutral-300 hover:bg-neutral-900 hover:text-white"
-            }`}
+            onClick={handleLogout}
+            className="w-full rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-300 hover:bg-red-500/20"
           >
-            <span className="mr-3">{item.emoji}</span>
-            {item.label}
+            Log Out
           </button>
-        ))}
-      </nav>
 
-      <div className="mt-10 rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-        <p className="text-sm font-bold text-white">Quick Capture</p>
-        <p className="mt-1 text-xs text-neutral-500">
-          Save slang fast. Define it later.
-        </p>
+          <p className="text-xs leading-5 text-neutral-600">
+            Logging out clears your Supabase session from this browser.
+          </p>
+        </div>
       </div>
     </aside>
+  );
+}
+
+function SidebarItem({
+  emoji,
+  label,
+  active = false,
+}: {
+  emoji: string;
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-black ${
+        active
+          ? "bg-yellow-400 text-black"
+          : "bg-neutral-900 text-neutral-400"
+      }`}
+    >
+      <span>{emoji}</span>
+      <span>{label}</span>
+    </div>
   );
 }
