@@ -8,7 +8,6 @@ import type {
   Entry,
   EntryStatus,
   Lifecycle,
-  Meaning,
   Visibility,
 } from "@/types/entry";
 import {
@@ -104,6 +103,24 @@ function slugify(value: string) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function isEntryInReviewQueue(entry: Entry) {
+  if (entry.status === "Needs Review") return true;
+  if (entry.meanings.length === 0) return true;
+
+  return entry.meanings.some((meaning) => {
+    return (
+      meaning.editorialStatus === "Needs Review" ||
+      !meaning.title.trim() ||
+      !meaning.definition.trim() ||
+      !meaning.example.trim() ||
+      !meaning.plainEnglish.trim() ||
+      !meaning.category.trim() ||
+      !meaning.tone.trim() ||
+      !meaning.usageFrequency.trim()
+    );
+  });
 }
 
 export function useEntries() {
@@ -283,231 +300,259 @@ export function useEntries() {
     });
   }, [entries, search]);
 
+  const reviewQueueEntries = useMemo(() => {
+    return entries.filter(isEntryInReviewQueue);
+  }, [entries]);
+
+  const filteredReviewQueueEntries = useMemo(() => {
+    return filteredEntries.filter(isEntryInReviewQueue);
+  }, [filteredEntries]);
+
   const draftCount = entries.filter((entry) => entry.status === "Draft").length;
-  const reviewCount = entries.filter(
+
+  const needsReviewStatusCount = entries.filter(
     (entry) => entry.status === "Needs Review"
   ).length;
+
+  const reviewQueueCount = reviewQueueEntries.length;
+
   const verifiedCount = entries.filter(
     (entry) => entry.status === "Verified" || entry.status === "Published"
   ).length;
+
   const archivedCount = entries.filter(
     (entry) => entry.status === "Archived"
   ).length;
+
   const publishedCount = entries.filter(
     (entry) => entry.status === "Published"
   ).length;
 
-  async function addEntry(word: string, type: string) {
-    if (!word.trim()) return;
+  const addEntry = useCallback(
+    async function addEntry(word: string, type: string) {
+      if (!word.trim()) return;
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (!user) {
-      window.location.href = "/login";
-      return;
-    }
-
-    const cleanWord = word.trim();
-
-    const { data: entry, error: entryError } = await supabase
-      .from("entries")
-      .insert({
-        user_id: user.id,
-        word: cleanWord,
-        type,
-        slug: slugify(cleanWord),
-        pronunciation: "",
-        part_of_speech: "",
-        alternate_spellings: "",
-        status: "Draft",
-        lifecycle: "Current",
-        visibility: "Private",
-        featured: false,
-        ai_added_status: "No",
-        audio_filename: "",
-        illustration_filename: "",
-        illustration_notes: "",
-        notes: "",
-      })
-      .select("id")
-      .single();
-
-    if (entryError) {
-      alert(entryError.message);
-      return;
-    }
-
-    const { error: meaningError } = await supabase.from("meanings").insert({
-      entry_id: entry.id,
-      meaning_order: 1,
-      title: "General Meaning",
-      definition: "",
-      example: "",
-      plain_english: "",
-      category: "",
-      tone: "",
-      concepts_text: "",
-      usage_frequency: "",
-      cultural_context: "",
-      editorial_status: "Draft",
-      ai_added_status: "No",
-      verified: false,
-      source: "Original",
-    });
-
-    if (meaningError) {
-      alert(meaningError.message);
-      return;
-    }
-
-    await loadEntries();
-  }
-
-  async function updateEntry(updatedEntry: Entry) {
-    const { error: entryError } = await supabase
-      .from("entries")
-      .update({
-        word: updatedEntry.word,
-        type: updatedEntry.type,
-        slug: updatedEntry.slug.trim() || slugify(updatedEntry.word),
-        pronunciation: updatedEntry.pronunciation,
-        part_of_speech: updatedEntry.partOfSpeech,
-        alternate_spellings: updatedEntry.alternateSpellings,
-        status: updatedEntry.status,
-        lifecycle: updatedEntry.lifecycle,
-        visibility: updatedEntry.visibility,
-        featured: updatedEntry.featured,
-        ai_added_status: updatedEntry.aiAddedStatus,
-        audio_filename: updatedEntry.audioFilename,
-        illustration_filename: updatedEntry.illustrationFilename,
-        illustration_notes: updatedEntry.illustrationNotes,
-        notes: updatedEntry.notes,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", updatedEntry.id);
-
-    if (entryError) {
-      alert(entryError.message);
-      return;
-    }
-
-    const { data: existingMeanings, error: existingMeaningError } =
-      await supabase
-        .from("meanings")
-        .select("id")
-        .eq("entry_id", updatedEntry.id);
-
-    if (existingMeaningError) {
-      alert(existingMeaningError.message);
-      return;
-    }
-
-    const keptMeaningIds = updatedEntry.meanings
-      .filter((meaning) => !meaning.id.startsWith("temp-"))
-      .map((meaning) => meaning.id);
-
-    const meaningIdsToDelete = (existingMeanings ?? [])
-      .map((meaning) => meaning.id)
-      .filter((id) => !keptMeaningIds.includes(id));
-
-    if (meaningIdsToDelete.length > 0) {
-      const { error: deleteMeaningsError } = await supabase
-        .from("meanings")
-        .delete()
-        .in("id", meaningIdsToDelete);
-
-      if (deleteMeaningsError) {
-        alert(deleteMeaningsError.message);
+      if (!user) {
+        window.location.href = "/login";
         return;
       }
-    }
 
-    for (let index = 0; index < updatedEntry.meanings.length; index++) {
-      const meaning = updatedEntry.meanings[index];
+      const cleanWord = word.trim();
 
-      const meaningPayload = {
-        meaning_order: index + 1,
-        title: meaning.title,
-        definition: meaning.definition,
-        example: meaning.example,
-        plain_english: meaning.plainEnglish,
-        category: meaning.category,
-        tone: meaning.tone,
-        concepts_text: meaning.conceptsText,
-        usage_frequency: meaning.usageFrequency,
-        cultural_context: meaning.culturalContext,
-        editorial_status: meaning.editorialStatus,
-        ai_added_status: meaning.aiAddedStatus,
-        verified: meaning.verified,
-        source: meaning.source,
-        updated_at: new Date().toISOString(),
-      };
+      const { data: entry, error: entryError } = await supabase
+        .from("entries")
+        .insert({
+          user_id: user.id,
+          word: cleanWord,
+          type,
+          slug: slugify(cleanWord),
+          pronunciation: "",
+          part_of_speech: "",
+          alternate_spellings: "",
+          status: "Draft",
+          lifecycle: "Current",
+          visibility: "Private",
+          featured: false,
+          ai_added_status: "No",
+          audio_filename: "",
+          illustration_filename: "",
+          illustration_notes: "",
+          notes: "",
+        })
+        .select("id")
+        .single();
 
-      if (meaning.id.startsWith("temp-")) {
-        const { error } = await supabase.from("meanings").insert({
-          entry_id: updatedEntry.id,
-          ...meaningPayload,
-        });
+      if (entryError) {
+        alert(entryError.message);
+        return;
+      }
 
-        if (error) {
-          alert(error.message);
-          return;
-        }
-      } else {
-        const { error } = await supabase
+      const { error: meaningError } = await supabase.from("meanings").insert({
+        entry_id: entry.id,
+        meaning_order: 1,
+        title: "General Meaning",
+        definition: "",
+        example: "",
+        plain_english: "",
+        category: "",
+        tone: "",
+        concepts_text: "",
+        usage_frequency: "",
+        cultural_context: "",
+        editorial_status: "Draft",
+        ai_added_status: "No",
+        verified: false,
+        source: "Original",
+      });
+
+      if (meaningError) {
+        alert(meaningError.message);
+        return;
+      }
+
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
+
+  const updateEntry = useCallback(
+    async function updateEntry(updatedEntry: Entry) {
+      const { error: entryError } = await supabase
+        .from("entries")
+        .update({
+          word: updatedEntry.word,
+          type: updatedEntry.type,
+          slug: updatedEntry.slug.trim() || slugify(updatedEntry.word),
+          pronunciation: updatedEntry.pronunciation,
+          part_of_speech: updatedEntry.partOfSpeech,
+          alternate_spellings: updatedEntry.alternateSpellings,
+          status: updatedEntry.status,
+          lifecycle: updatedEntry.lifecycle,
+          visibility: updatedEntry.visibility,
+          featured: updatedEntry.featured,
+          ai_added_status: updatedEntry.aiAddedStatus,
+          audio_filename: updatedEntry.audioFilename,
+          illustration_filename: updatedEntry.illustrationFilename,
+          illustration_notes: updatedEntry.illustrationNotes,
+          notes: updatedEntry.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", updatedEntry.id);
+
+      if (entryError) {
+        alert(entryError.message);
+        return;
+      }
+
+      const { data: existingMeanings, error: existingMeaningError } =
+        await supabase
           .from("meanings")
-          .update(meaningPayload)
-          .eq("id", meaning.id);
+          .select("id")
+          .eq("entry_id", updatedEntry.id);
 
-        if (error) {
-          alert(error.message);
+      if (existingMeaningError) {
+        alert(existingMeaningError.message);
+        return;
+      }
+
+      const keptMeaningIds = updatedEntry.meanings
+        .filter((meaning) => !meaning.id.startsWith("temp-"))
+        .map((meaning) => meaning.id);
+
+      const meaningIdsToDelete = (existingMeanings ?? [])
+        .map((meaning) => meaning.id)
+        .filter((id) => !keptMeaningIds.includes(id));
+
+      if (meaningIdsToDelete.length > 0) {
+        const { error: deleteMeaningsError } = await supabase
+          .from("meanings")
+          .delete()
+          .in("id", meaningIdsToDelete);
+
+        if (deleteMeaningsError) {
+          alert(deleteMeaningsError.message);
           return;
         }
       }
-    }
 
-    await loadEntries();
-  }
+      for (let index = 0; index < updatedEntry.meanings.length; index++) {
+        const meaning = updatedEntry.meanings[index];
 
-  async function updateStatus(id: string, status: EntryStatus) {
-    const { error } = await supabase
-      .from("entries")
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+        const meaningPayload = {
+          meaning_order: index + 1,
+          title: meaning.title,
+          definition: meaning.definition,
+          example: meaning.example,
+          plain_english: meaning.plainEnglish,
+          category: meaning.category,
+          tone: meaning.tone,
+          concepts_text: meaning.conceptsText,
+          usage_frequency: meaning.usageFrequency,
+          cultural_context: meaning.culturalContext,
+          editorial_status: meaning.editorialStatus,
+          ai_added_status: meaning.aiAddedStatus,
+          verified: meaning.verified,
+          source: meaning.source,
+          updated_at: new Date().toISOString(),
+        };
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
+        if (meaning.id.startsWith("temp-")) {
+          const { error } = await supabase.from("meanings").insert({
+            entry_id: updatedEntry.id,
+            ...meaningPayload,
+          });
 
-    await loadEntries();
-  }
+          if (error) {
+            alert(error.message);
+            return;
+          }
+        } else {
+          const { error } = await supabase
+            .from("meanings")
+            .update(meaningPayload)
+            .eq("id", meaning.id);
 
-  async function deleteEntry(id: string) {
-    const confirmed = window.confirm(
-      "Delete this entry? This will also delete all meanings attached to it."
-    );
+          if (error) {
+            alert(error.message);
+            return;
+          }
+        }
+      }
 
-    if (!confirmed) return;
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
 
-    const { error } = await supabase.from("entries").delete().eq("id", id);
+  const updateStatus = useCallback(
+    async function updateStatus(id: string, status: EntryStatus) {
+      const { error } = await supabase
+        .from("entries")
+        .update({
+          status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-    await loadEntries();
-  }
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
+
+  const deleteEntry = useCallback(
+    async function deleteEntry(id: string) {
+      const confirmed = window.confirm(
+        "Delete this entry? This will also delete all meanings attached to it."
+      );
+
+      if (!confirmed) return;
+
+      const { error } = await supabase.from("entries").delete().eq("id", id);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadEntries();
+    },
+    [loadEntries, supabase]
+  );
 
   return {
     entries,
     filteredEntries,
+    reviewQueueEntries,
+    filteredReviewQueueEntries,
     search,
     setSearch,
     addEntry,
@@ -515,7 +560,9 @@ export function useEntries() {
     updateStatus,
     deleteEntry,
     draftCount,
-    reviewCount,
+    needsReviewStatusCount,
+    reviewQueueCount,
+    reviewCount: needsReviewStatusCount,
     verifiedCount,
     archivedCount,
     publishedCount,
