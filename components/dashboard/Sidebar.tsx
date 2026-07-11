@@ -39,6 +39,7 @@ type SidebarProps = {
   onOpenGraphExplorer?: () => void;
   onOpenGraphMigration?: () => void;
   onOpenCloudGraph?: () => void;
+  onOpenCloudConceptEditor?: () => void;
 
   userEmail?: string | null;
   onLogout?: () => void;
@@ -56,7 +57,7 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.7C1";
+const VERSION_LABEL = "Alpha 3.7C2";
 
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -311,6 +312,13 @@ export function Sidebar(props: SidebarProps) {
   description: "Browse permanent Supabase graph data.",
   icon: "🌐",
   action: props.onOpenCloudGraph,
+},
+{
+  key: "cloud-concept-editor",
+  label: "Cloud Concepts",
+  description: "Edit concepts and assignments in Supabase.",
+  icon: "☁️",
+  action: props.onOpenCloudConceptEditor,
 },
 
 ];
@@ -567,6 +575,16 @@ export function Sidebar(props: SidebarProps) {
     className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
   >
     🌐 Cloud Graph
+  </button>
+)}
+
+{props.onOpenCloudConceptEditor && (
+  <button
+    type="button"
+    onClick={props.onOpenCloudConceptEditor}
+    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+  >
+    ☁️ Cloud Concepts
   </button>
 )}
 

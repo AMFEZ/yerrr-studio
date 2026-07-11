@@ -22,6 +22,7 @@ import { RelationshipDrawer } from "@/components/relationships/RelationshipDrawe
 import { GraphExplorerDrawer } from "@/components/relationships/GraphExplorerDrawer";
 import { GraphMigrationDrawer } from "@/components/concepts/GraphMigrationDrawer";
 import { CloudGraphDrawer } from "@/components/concepts/CloudGraphDrawer";
+import { CloudConceptEditorDrawer } from "@/components/concepts/CloudConceptEditorDrawer";
 
 type WorkspaceMode =
   | "all"
@@ -70,7 +71,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.7C1";
+const APP_VERSION = "Alpha 3.7C2";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -316,6 +317,7 @@ const [graphRevision, setGraphRevision] = useState(0);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isGraphMigrationOpen, setIsGraphMigrationOpen] = useState(false);
   const [isCloudGraphOpen, setIsCloudGraphOpen] = useState(false);
+  const [isCloudConceptEditorOpen, setIsCloudConceptEditorOpen, ] = useState(false);
 
 useEffect(() => {
   setIsHydrated(true);
@@ -1093,6 +1095,7 @@ if (!isHydrated) {
       onOpenGraphExplorer={() => setIsGraphExplorerOpen(true)}
       onOpenGraphMigration={() => setIsGraphMigrationOpen(true)}
       onOpenCloudGraph={() => setIsCloudGraphOpen(true)}
+      onOpenCloudConceptEditor={() => setIsCloudConceptEditorOpen(true)}
     />
 
     <section className="flex-1">
@@ -1396,7 +1399,7 @@ if (!isHydrated) {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio {APP_VERSION} · Supabase Cloud Graph
+            YERRR Studio {APP_VERSION} · Cloud Concept Editor
           </footer>
         </div>
       </section>
@@ -1776,6 +1779,21 @@ if (!isHydrated) {
   entries={entries}
   onMerged={() => {
     setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<CloudConceptEditorDrawer
+  isOpen={isCloudConceptEditorOpen}
+  onClose={() => setIsCloudConceptEditorOpen(false)}
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsCloudConceptEditorOpen(false);
+    setSelectedEntry(entry);
+  }}
+  onGraphChanged={() => {
+    setGraphRevision(
+      (currentRevision) => currentRevision + 1
+    );
   }}
 />
 
