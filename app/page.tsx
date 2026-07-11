@@ -68,7 +68,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.5";
+const APP_VERSION = "Alpha 3.6";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -311,6 +311,11 @@ const [graphRevision, setGraphRevision] = useState(0);
   const [workingLabel, setWorkingLabel] = useState("");
   const [isRelationshipsOpen, setIsRelationshipsOpen] = useState(false);
   const [isGraphExplorerOpen, setIsGraphExplorerOpen] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+useEffect(() => {
+  setIsHydrated(true);
+}, []);
 
   useEffect(() => {
     try {
@@ -1046,6 +1051,28 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     ["trash", "Trash"],
   ];
 
+if (!isHydrated) {
+  return (
+    <main className="min-h-screen bg-neutral-950 text-white">
+      <div className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-6">
+        <div className="rounded-3xl border border-neutral-800 bg-neutral-900 px-8 py-7 text-center shadow-2xl">
+          <p className="text-xs font-black uppercase tracking-[0.3em] text-yellow-400">
+            YERRR Studio
+          </p>
+
+          <p className="mt-3 text-lg font-black text-white">
+            Loading workspace...
+          </p>
+
+          <p className="mt-2 text-sm text-neutral-500">
+            Preparing entries and Knowledge Graph tools.
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
   return (
   <main className="min-h-screen bg-neutral-950 text-white lg:flex">
     <Sidebar
@@ -1363,7 +1390,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio {APP_VERSION} · Entry Relationships
+            YERRR Studio {APP_VERSION} · Unified Graph Explorer
           </footer>
         </div>
       </section>
