@@ -293,13 +293,13 @@ export function Sidebar(props: SidebarProps) {
     icon: "🕸️",
     action: props.onOpenRelationships,
   },
-  {
-    key: "graph-explorer",
-    label: "Graph Explorer",
-    description: "Explore concepts and relationships together.",
-    icon: "🧭",
-    action: props.onOpenGraphExplorer,
-  },
+ {
+  key: "graph-explorer",
+  label: "Graph Explorer",
+  description: "Explore the permanent Supabase graph.",
+  icon: "🧭",
+  action: props.onOpenGraphExplorer,
+},
   {
   key: "graph-migration",
   label: "Cloud Migration",

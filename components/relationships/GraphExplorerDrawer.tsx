@@ -1,26 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+
 import type { Entry } from "@/types/entry";
-import type { Concept, ConceptAssignment } from "@/types/concept";
+import type { Concept } from "@/types/concept";
 import type {
   EntryRelationship,
   EntryRelationshipType,
 } from "@/types/relationship";
+
+import { useCloudKnowledgeGraph } from "@/hooks/useCloudKnowledgeGraph";
 
 type GraphExplorerDrawerProps = {
   isOpen: boolean;
   onClose: () => void;
   entries?: Entry[];
   onOpenEntry?: (entry: Entry) => void;
+  onOpenCloudConcepts?: () => void;
+  onOpenCloudRelationships?: () => void;
 };
 
-type ExplorerTab = "network" | "concept";
-
-const CONCEPT_STORAGE_KEY = "yerrr-studio-concepts-alpha-3";
-const ASSIGNMENT_STORAGE_KEY = "yerrr-studio-concept-assignments-alpha-3";
-const RELATIONSHIP_STORAGE_KEY =
-  "yerrr-studio-entry-relationships-alpha-3";
+type ExplorerTab = "entry" | "concept";
 
 function getDateSlug() {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -31,7 +31,10 @@ function downloadTextFile(
   content: string,
   mimeType: string
 ) {
-  const blob = new Blob([content], { type: mimeType });
+  const blob = new Blob([content], {
+    type: mimeType,
+  });
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 
@@ -77,7 +80,9 @@ function getConceptColorClasses(color: Concept["color"]) {
   return "border-zinc-400/30 bg-zinc-400/10 text-zinc-100";
 }
 
-function getRelationshipClasses(type: EntryRelationshipType) {
+function getRelationshipClasses(
+  type: EntryRelationshipType
+) {
   if (type === "Synonym Of") {
     return "border-green-400/30 bg-green-400/10 text-green-100";
   }
@@ -118,84 +123,98 @@ export function GraphExplorerDrawer({
   onClose,
   entries = [],
   onOpenEntry,
+  onOpenCloudConcepts,
+  onOpenCloudRelationships,
 }: GraphExplorerDrawerProps) {
-  const [concepts, setConcepts] = useState<Concept[]>([]);
-  const [assignments, setAssignments] = useState<ConceptAssignment[]>([]);
-  const [relationships, setRelationships] = useState<EntryRelationship[]>([]);
+  const {
+    concepts,
+    assignments,
+    relationships,
+    isLoading,
+    hasLoaded,
+    error,
+    refresh,
+  } = useCloudKnowledgeGraph(isOpen);
 
-  const [activeTab, setActiveTab] = useState<ExplorerTab>("network");
-  const [selectedEntryId, setSelectedEntryId] = useState("");
-  const [selectedConceptId, setSelectedConceptId] = useState("");
+  const [activeTab, setActiveTab] =
+    useState<ExplorerTab>("entry");
+
+  const [selectedEntryId, setSelectedEntryId] =
+    useState("");
+
+  const [selectedConceptId, setSelectedConceptId] =
+    useState("");
+
   const [entrySearch, setEntrySearch] = useState("");
   const [networkSearch, setNetworkSearch] = useState("");
-  const [conceptEntrySearch, setConceptEntrySearch] = useState("");
+  const [conceptSearch, setConceptSearch] = useState("");
+  const [conceptEntrySearch, setConceptEntrySearch] =
+    useState("");
+
   const [message, setMessage] = useState("");
-
-  function loadGraphData() {
-    try {
-      const storedConcepts = window.localStorage.getItem(CONCEPT_STORAGE_KEY);
-      const storedAssignments = window.localStorage.getItem(
-        ASSIGNMENT_STORAGE_KEY
-      );
-      const storedRelationships = window.localStorage.getItem(
-        RELATIONSHIP_STORAGE_KEY
-      );
-
-      const parsedConcepts = storedConcepts
-        ? (JSON.parse(storedConcepts) as unknown)
-        : [];
-
-      const parsedAssignments = storedAssignments
-        ? (JSON.parse(storedAssignments) as unknown)
-        : [];
-
-      const parsedRelationships = storedRelationships
-        ? (JSON.parse(storedRelationships) as unknown)
-        : [];
-
-      setConcepts(
-        Array.isArray(parsedConcepts)
-          ? (parsedConcepts as Concept[])
-          : []
-      );
-
-      setAssignments(
-        Array.isArray(parsedAssignments)
-          ? (parsedAssignments as ConceptAssignment[])
-          : []
-      );
-
-      setRelationships(
-        Array.isArray(parsedRelationships)
-          ? (parsedRelationships as EntryRelationship[])
-          : []
-      );
-    } catch {
-      setConcepts([]);
-      setAssignments([]);
-      setRelationships([]);
-      setMessage("Local Knowledge Graph data could not be read.");
-    }
-  }
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    loadGraphData();
-    setMessage("");
-  }, [isOpen]);
 
   const entryById = useMemo(() => {
     return new Map(
-      entries.map((entry) => [String(entry.id), entry])
+      entries.map((entry) => [
+        String(entry.id),
+        entry,
+      ])
     );
   }, [entries]);
 
   const conceptById = useMemo(() => {
     return new Map(
-      concepts.map((concept) => [String(concept.id), concept])
+      concepts.map((concept) => [
+        String(concept.id),
+        concept,
+      ])
     );
   }, [concepts]);
+
+  const validAssignments = useMemo(() => {
+    return assignments.filter((assignment) => {
+      return entryById.has(String(assignment.entryId));
+    });
+  }, [assignments, entryById]);
+
+  const validRelationships = useMemo(() => {
+    return relationships.filter((relationship) => {
+      return (
+        entryById.has(
+          String(relationship.sourceEntryId)
+        ) &&
+        entryById.has(
+          String(relationship.targetEntryId)
+        )
+      );
+    });
+  }, [relationships, entryById]);
+
+  const unmatchedAssignmentCount = useMemo(() => {
+    return assignments.reduce((total, assignment) => {
+      const entryExists = entryById.has(
+        String(assignment.entryId)
+      );
+
+      return (
+        total +
+        assignment.conceptIds.filter((conceptId) => {
+          return (
+            !entryExists ||
+            !conceptById.has(String(conceptId))
+          );
+        }).length
+      );
+    }, 0);
+  }, [
+    assignments,
+    entryById,
+    conceptById,
+  ]);
+
+  const unmatchedRelationshipCount = useMemo(() => {
+    return relationships.length - validRelationships.length;
+  }, [relationships, validRelationships]);
 
   const sortedEntries = useMemo(() => {
     return [...entries].sort((a, b) =>
@@ -203,10 +222,78 @@ export function GraphExplorerDrawer({
     );
   }, [entries]);
 
+  const conceptUsageCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    validAssignments.forEach((assignment) => {
+      assignment.conceptIds.forEach((conceptId) => {
+        const normalizedConceptId =
+          String(conceptId);
+
+        if (!conceptById.has(normalizedConceptId)) {
+          return;
+        }
+
+        counts.set(
+          normalizedConceptId,
+          (counts.get(normalizedConceptId) ?? 0) + 1
+        );
+      });
+    });
+
+    return counts;
+  }, [validAssignments, conceptById]);
+
+  const relationshipCountsByEntry = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    validRelationships.forEach((relationship) => {
+      const sourceId = String(
+        relationship.sourceEntryId
+      );
+
+      const targetId = String(
+        relationship.targetEntryId
+      );
+
+      counts.set(
+        sourceId,
+        (counts.get(sourceId) ?? 0) + 1
+      );
+
+      counts.set(
+        targetId,
+        (counts.get(targetId) ?? 0) + 1
+      );
+    });
+
+    return counts;
+  }, [validRelationships]);
+
+  const conceptCountsByEntry = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    validAssignments.forEach((assignment) => {
+      const validConceptIds =
+        assignment.conceptIds.filter((conceptId) =>
+          conceptById.has(String(conceptId))
+        );
+
+      counts.set(
+        String(assignment.entryId),
+        new Set(validConceptIds.map(String)).size
+      );
+    });
+
+    return counts;
+  }, [validAssignments, conceptById]);
+
   const filteredEntryChoices = useMemo(() => {
     const query = entrySearch.trim().toLowerCase();
 
-    if (!query) return sortedEntries;
+    if (!query) {
+      return sortedEntries;
+    }
 
     return sortedEntries.filter((entry) => {
       return (
@@ -225,34 +312,34 @@ export function GraphExplorerDrawer({
     return conceptById.get(selectedConceptId) ?? null;
   }, [conceptById, selectedConceptId]);
 
-  const validRelationships = useMemo(() => {
-    return relationships.filter((relationship) => {
-      return (
-        entryById.has(String(relationship.sourceEntryId)) &&
-        entryById.has(String(relationship.targetEntryId))
-      );
-    });
-  }, [relationships, entryById]);
-
-  const validAssignments = useMemo(() => {
-    return assignments.filter((assignment) => {
-      return entryById.has(String(assignment.entryId));
-    });
-  }, [assignments, entryById]);
-
   const selectedEntryConcepts = useMemo(() => {
-    if (!selectedEntryId) return [];
+    if (!selectedEntryId) {
+      return [];
+    }
 
     const assignment = validAssignments.find(
       (currentAssignment) =>
-        String(currentAssignment.entryId) === selectedEntryId
+        String(currentAssignment.entryId) ===
+        selectedEntryId
     );
 
-    if (!assignment) return [];
+    if (!assignment) {
+      return [];
+    }
 
-    return assignment.conceptIds
-      .map((conceptId) => conceptById.get(String(conceptId)))
-      .filter((concept): concept is Concept => Boolean(concept));
+    return Array.from(
+      new Set(assignment.conceptIds.map(String))
+    )
+      .map((conceptId) =>
+        conceptById.get(conceptId)
+      )
+      .filter(
+        (concept): concept is Concept =>
+          Boolean(concept)
+      )
+      .sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
   }, [
     selectedEntryId,
     validAssignments,
@@ -260,39 +347,54 @@ export function GraphExplorerDrawer({
   ]);
 
   const selectedEntryRelationships = useMemo(() => {
-    if (!selectedEntryId) return [];
+    if (!selectedEntryId) {
+      return [];
+    }
 
     const query = networkSearch.trim().toLowerCase();
 
     return validRelationships
       .filter((relationship) => {
         return (
-          String(relationship.sourceEntryId) === selectedEntryId ||
-          String(relationship.targetEntryId) === selectedEntryId
+          String(relationship.sourceEntryId) ===
+            selectedEntryId ||
+          String(relationship.targetEntryId) ===
+            selectedEntryId
         );
       })
       .filter((relationship) => {
-        if (!query) return true;
+        if (!query) {
+          return true;
+        }
 
         const sourceEntry = entryById.get(
           String(relationship.sourceEntryId)
         );
+
         const targetEntry = entryById.get(
           String(relationship.targetEntryId)
         );
 
         return (
-          sourceEntry?.word.toLowerCase().includes(query) ||
-          targetEntry?.word.toLowerCase().includes(query) ||
-          relationship.type.toLowerCase().includes(query) ||
-          relationship.note.toLowerCase().includes(query)
+          sourceEntry?.word
+            .toLowerCase()
+            .includes(query) ||
+          targetEntry?.word
+            .toLowerCase()
+            .includes(query) ||
+          relationship.type
+            .toLowerCase()
+            .includes(query) ||
+          relationship.note
+            .toLowerCase()
+            .includes(query)
         );
       });
   }, [
     selectedEntryId,
     validRelationships,
-    entryById,
     networkSearch,
+    entryById,
   ]);
 
   const connectedEntries = useMemo(() => {
@@ -304,30 +406,44 @@ export function GraphExplorerDrawer({
       }
     >();
 
-    selectedEntryRelationships.forEach((relationship) => {
-      const sourceId = String(relationship.sourceEntryId);
-      const targetId = String(relationship.targetEntryId);
+    selectedEntryRelationships.forEach(
+      (relationship) => {
+        const sourceId = String(
+          relationship.sourceEntryId
+        );
 
-      const connectedId =
-        sourceId === selectedEntryId ? targetId : sourceId;
+        const targetId = String(
+          relationship.targetEntryId
+        );
 
-      const connectedEntry = entryById.get(connectedId);
+        const connectedId =
+          sourceId === selectedEntryId
+            ? targetId
+            : sourceId;
 
-      if (!connectedEntry) return;
+        const connectedEntry =
+          entryById.get(connectedId);
 
-      const current = connectedMap.get(connectedId);
+        if (!connectedEntry) {
+          return;
+        }
 
-      connectedMap.set(connectedId, {
-        entry: connectedEntry,
-        relationships: [
-          ...(current?.relationships ?? []),
-          relationship,
-        ],
-      });
-    });
+        const existing =
+          connectedMap.get(connectedId);
 
-    return Array.from(connectedMap.values()).sort((a, b) =>
-      a.entry.word.localeCompare(b.entry.word)
+        connectedMap.set(connectedId, {
+          entry: connectedEntry,
+          relationships: [
+            ...(existing?.relationships ?? []),
+            relationship,
+          ],
+        });
+      }
+    );
+
+    return Array.from(connectedMap.values()).sort(
+      (a, b) =>
+        a.entry.word.localeCompare(b.entry.word)
     );
   }, [
     selectedEntryRelationships,
@@ -335,42 +451,49 @@ export function GraphExplorerDrawer({
     entryById,
   ]);
 
-  const conceptUsageCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+  const filteredConcepts = useMemo(() => {
+    const query = conceptSearch.trim().toLowerCase();
 
-    validAssignments.forEach((assignment) => {
-      assignment.conceptIds.forEach((conceptId) => {
-        const normalizedId = String(conceptId);
+    const sortedConcepts = [...concepts].sort(
+      (a, b) => {
+        const bUsage =
+          conceptUsageCounts.get(String(b.id)) ?? 0;
 
-        if (!conceptById.has(normalizedId)) return;
+        const aUsage =
+          conceptUsageCounts.get(String(a.id)) ?? 0;
 
-        counts.set(
-          normalizedId,
-          (counts.get(normalizedId) ?? 0) + 1
-        );
-      });
-    });
+        if (bUsage !== aUsage) {
+          return bUsage - aUsage;
+        }
 
-    return counts;
-  }, [validAssignments, conceptById]);
-
-  const sortedConcepts = useMemo(() => {
-    return [...concepts].sort((a, b) => {
-      const bUsage = conceptUsageCounts.get(String(b.id)) ?? 0;
-      const aUsage = conceptUsageCounts.get(String(a.id)) ?? 0;
-
-      if (bUsage !== aUsage) {
-        return bUsage - aUsage;
+        return a.name.localeCompare(b.name);
       }
+    );
 
-      return a.name.localeCompare(b.name);
+    if (!query) {
+      return sortedConcepts;
+    }
+
+    return sortedConcepts.filter((concept) => {
+      return (
+        concept.name.toLowerCase().includes(query) ||
+        concept.slug.toLowerCase().includes(query) ||
+        concept.category.toLowerCase().includes(query) ||
+        concept.description
+          .toLowerCase()
+          .includes(query)
+      );
     });
-  }, [concepts, conceptUsageCounts]);
+  }, [
+    concepts,
+    conceptSearch,
+    conceptUsageCounts,
+  ]);
 
-  const selectedConceptEntries = useMemo(() => {
-    if (!selectedConceptId) return [];
-
-    const query = conceptEntrySearch.trim().toLowerCase();
+  const allSelectedConceptEntries = useMemo(() => {
+    if (!selectedConceptId) {
+      return [];
+    }
 
     const linkedEntryIds = new Set(
       validAssignments
@@ -379,69 +502,113 @@ export function GraphExplorerDrawer({
             .map(String)
             .includes(selectedConceptId)
         )
-        .map((assignment) => String(assignment.entryId))
+        .map((assignment) =>
+          String(assignment.entryId)
+        )
     );
 
     return entries
       .filter((entry) =>
         linkedEntryIds.has(String(entry.id))
       )
-      .filter((entry) => {
-        if (!query) return true;
-
-        return (
-          entry.word.toLowerCase().includes(query) ||
-          entry.slug.toLowerCase().includes(query) ||
-          entry.status.toLowerCase().includes(query)
-        );
-      })
-      .sort((a, b) => a.word.localeCompare(b.word));
+      .sort((a, b) =>
+        a.word.localeCompare(b.word)
+      );
   }, [
     selectedConceptId,
     validAssignments,
     entries,
-    conceptEntrySearch,
   ]);
 
+  const filteredSelectedConceptEntries =
+    useMemo(() => {
+      const query =
+        conceptEntrySearch.trim().toLowerCase();
+
+      if (!query) {
+        return allSelectedConceptEntries;
+      }
+
+      return allSelectedConceptEntries.filter(
+        (entry) => {
+          return (
+            entry.word.toLowerCase().includes(query) ||
+            entry.slug.toLowerCase().includes(query) ||
+            entry.status
+              .toLowerCase()
+              .includes(query)
+          );
+        }
+      );
+    }, [
+      allSelectedConceptEntries,
+      conceptEntrySearch,
+    ]);
+
   const graphStats = useMemo(() => {
-    const relationshipEntryIds = new Set<string>();
-    const conceptEntryIds = new Set<string>();
+    const entriesWithConcepts = new Set<string>();
+    const entriesWithRelationships = new Set<string>();
+
+    validAssignments.forEach((assignment) => {
+      const hasValidConcept =
+        assignment.conceptIds.some((conceptId) =>
+          conceptById.has(String(conceptId))
+        );
+
+      if (hasValidConcept) {
+        entriesWithConcepts.add(
+          String(assignment.entryId)
+        );
+      }
+    });
 
     validRelationships.forEach((relationship) => {
-      relationshipEntryIds.add(
+      entriesWithRelationships.add(
         String(relationship.sourceEntryId)
       );
-      relationshipEntryIds.add(
+
+      entriesWithRelationships.add(
         String(relationship.targetEntryId)
       );
     });
 
-    validAssignments.forEach((assignment) => {
-      if (assignment.conceptIds.length > 0) {
-        conceptEntryIds.add(String(assignment.entryId));
+    const fullyConnectedEntries = entries.filter(
+      (entry) => {
+        const entryId = String(entry.id);
+
+        return (
+          entriesWithConcepts.has(entryId) &&
+          entriesWithRelationships.has(entryId)
+        );
       }
-    });
+    ).length;
 
-    const fullyConnectedEntries = entries.filter((entry) => {
-      const id = String(entry.id);
-
-      return (
-        relationshipEntryIds.has(id) &&
-        conceptEntryIds.has(id)
-      );
-    }).length;
+    const conceptLinks = validAssignments.reduce(
+      (total, assignment) => {
+        return (
+          total +
+          assignment.conceptIds.filter((conceptId) =>
+            conceptById.has(String(conceptId))
+          ).length
+        );
+      },
+      0
+    );
 
     return {
       concepts: concepts.length,
-      conceptAssignments: validAssignments.length,
+      conceptLinks,
       relationships: validRelationships.length,
-      entriesWithConcepts: conceptEntryIds.size,
-      entriesWithRelationships: relationshipEntryIds.size,
+      entriesWithConcepts:
+        entriesWithConcepts.size,
+      entriesWithRelationships:
+        entriesWithRelationships.size,
       fullyConnectedEntries,
     };
   }, [
-    entries,
     concepts,
+    conceptById,
+    entries,
     validAssignments,
     validRelationships,
   ]);
@@ -450,7 +617,7 @@ export function GraphExplorerDrawer({
     setSelectedEntryId(entryId);
     setNetworkSearch("");
     setMessage("");
-    setActiveTab("network");
+    setActiveTab("entry");
   }
 
   function selectConcept(conceptId: string) {
@@ -461,14 +628,28 @@ export function GraphExplorerDrawer({
   }
 
   function openEntry(entry: Entry) {
-    if (!onOpenEntry) return;
+    if (!onOpenEntry) {
+      return;
+    }
 
     onClose();
     onOpenEntry(entry);
   }
 
+  function openCloudConcepts() {
+    onClose();
+    onOpenCloudConcepts?.();
+  }
+
+  function openCloudRelationships() {
+    onClose();
+    onOpenCloudRelationships?.();
+  }
+
   function exportSelectedEntryGraph() {
-    if (!selectedEntry) return;
+    if (!selectedEntry) {
+      return;
+    }
 
     const relationshipsForExport =
       validRelationships.filter((relationship) => {
@@ -482,683 +663,836 @@ export function GraphExplorerDrawer({
 
     const connectedEntryIds = new Set<string>();
 
-    relationshipsForExport.forEach((relationship) => {
-      connectedEntryIds.add(
-        String(relationship.sourceEntryId)
-      );
-      connectedEntryIds.add(
-        String(relationship.targetEntryId)
-      );
-    });
+    relationshipsForExport.forEach(
+      (relationship) => {
+        connectedEntryIds.add(
+          String(relationship.sourceEntryId)
+        );
 
-    connectedEntryIds.delete(String(selectedEntry.id));
-
-    const connectedEntriesForExport = entries.filter((entry) =>
-      connectedEntryIds.has(String(entry.id))
+        connectedEntryIds.add(
+          String(relationship.targetEntryId)
+        );
+      }
     );
+
+    connectedEntryIds.delete(
+      String(selectedEntry.id)
+    );
+
+    const connectedEntriesForExport =
+      entries.filter((entry) =>
+        connectedEntryIds.has(String(entry.id))
+      );
+
+    const exportSlug =
+      selectedEntry.slug ||
+      String(selectedEntry.id);
 
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.6",
-      exportType: "entry_graph_neighborhood",
+      version: "Alpha 3.7C4B",
+      source: "Supabase",
+      exportType: "cloud_entry_graph_neighborhood",
       exportedAt: new Date().toISOString(),
+
       entry: selectedEntry,
       concepts: selectedEntryConcepts,
       relationships: relationshipsForExport,
       connectedEntries: connectedEntriesForExport,
+
       counts: {
         concepts: selectedEntryConcepts.length,
-        relationships: relationshipsForExport.length,
-        connectedEntries: connectedEntriesForExport.length,
+        relationships:
+          relationshipsForExport.length,
+        connectedEntries:
+          connectedEntriesForExport.length,
       },
     };
 
     downloadTextFile(
-      `yerrr-entry-graph-${selectedEntry.slug}-${getDateSlug()}.json`,
+      `yerrr-cloud-entry-graph-${exportSlug}-${getDateSlug()}.json`,
       JSON.stringify(backup, null, 2),
       "application/json"
     );
 
     setMessage(
-      `Graph neighborhood exported for "${selectedEntry.word}".`
+      `Cloud graph exported for "${selectedEntry.word}".`
     );
   }
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm">
       <button
-        aria-label="Close graph explorer"
+        aria-label="Close cloud graph explorer"
         onClick={onClose}
         className="absolute inset-0 h-full w-full cursor-default"
       />
 
       <aside className="absolute bottom-0 right-0 max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border-t border-neutral-800 bg-neutral-950 p-5 shadow-2xl md:bottom-auto md:top-0 md:h-full md:max-h-none md:max-w-6xl md:rounded-none md:rounded-l-3xl md:border-l md:border-t-0 md:p-6">
-        <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-yellow-400">
-              Knowledge Graph
+            <p className="text-sm font-black uppercase tracking-[0.25em] text-sky-400">
+              Supabase Knowledge Graph
             </p>
 
             <h2 className="mt-2 text-2xl font-black text-white">
-              Unified Graph Explorer
+              Unified Cloud Graph Explorer
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">
-              Explore concepts and entry relationships together in
-              one connected view.
+              Explore permanent Supabase concepts,
+              assignments, and entry relationships in one
+              connected workspace.
             </p>
           </div>
 
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-black text-neutral-300 hover:border-neutral-700 hover:text-white"
-          >
-            ✕
-          </button>
-        </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void refresh()}
+              disabled={isLoading}
+              className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs font-black text-neutral-300 hover:border-sky-400 hover:text-sky-300 disabled:opacity-40"
+            >
+              {isLoading
+                ? "Refreshing..."
+                : "Refresh Cloud"}
+            </button>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-              Concepts
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-white">
-              {graphStats.concepts}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-              Assignments
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-white">
-              {graphStats.conceptAssignments}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-              Relationships
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-white">
-              {graphStats.relationships}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-              With Concepts
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-white">
-              {graphStats.entriesWithConcepts}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-              Related
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-white">
-              {graphStats.entriesWithRelationships}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-              Fully Connected
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-white">
-              {graphStats.fullyConnectedEntries}
-            </p>
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-black text-neutral-300 hover:border-neutral-700 hover:text-white"
+            >
+              ✕
+            </button>
           </div>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-neutral-800 bg-neutral-900 p-2">
-          <button
-            onClick={() => setActiveTab("network")}
-            className={`rounded-xl px-4 py-3 text-sm font-black ${
-              activeTab === "network"
-                ? "bg-yellow-400 text-black"
-                : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            Entry Network
-          </button>
-
-          <button
-            onClick={() => setActiveTab("concept")}
-            className={`rounded-xl px-4 py-3 text-sm font-black ${
-              activeTab === "concept"
-                ? "bg-yellow-400 text-black"
-                : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            Concept Network
-          </button>
-        </div>
+        {error && (
+          <div className="mb-5 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm font-bold text-red-100">
+            {error}
+          </div>
+        )}
 
         {message && (
-          <div className="mb-5 rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-4 text-sm font-bold text-yellow-100">
+          <div className="mb-5 rounded-xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm font-bold text-sky-100">
             {message}
           </div>
         )}
 
-        {activeTab === "network" ? (
-          <div className="grid gap-5 xl:grid-cols-[0.8fr_1.35fr]">
-            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-              <h3 className="font-black text-white">
-                Select an Entry
-              </h3>
+        {isLoading && !hasLoaded ? (
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-8 text-center">
+            <p className="font-black text-white">
+              Loading cloud graph...
+            </p>
 
-              <p className="mt-1 text-sm text-neutral-500">
-                Choose one entry to explore its complete graph
-                neighborhood.
-              </p>
+            <p className="mt-2 text-sm text-neutral-500">
+              Reading concepts, assignments, and
+              relationships from Supabase.
+            </p>
+          </div>
+        ) : (
+          <>
+            <section className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                  Concepts
+                </p>
 
-              <input
-                value={entrySearch}
-                onChange={(event) =>
-                  setEntrySearch(event.target.value)
-                }
-                placeholder="Search entries..."
-                className="mt-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
-              />
+                <p className="mt-2 text-2xl font-black text-white">
+                  {graphStats.concepts}
+                </p>
+              </div>
 
-              <div className="mt-4 max-h-[65vh] space-y-2 overflow-y-auto pr-1">
-                {filteredEntryChoices.map((entry) => {
-                  const isSelected =
-                    selectedEntryId === String(entry.id);
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                  Concept Links
+                </p>
 
-                  const assignment = validAssignments.find(
-                    (currentAssignment) =>
-                      String(currentAssignment.entryId) ===
-                      String(entry.id)
-                  );
+                <p className="mt-2 text-2xl font-black text-white">
+                  {graphStats.conceptLinks}
+                </p>
+              </div>
 
-                  const entryRelationshipCount =
-                    validRelationships.filter((relationship) => {
-                      return (
-                        String(relationship.sourceEntryId) ===
-                          String(entry.id) ||
-                        String(relationship.targetEntryId) ===
-                          String(entry.id)
-                      );
-                    }).length;
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                  Relationships
+                </p>
 
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      onClick={() =>
-                        selectEntry(String(entry.id))
-                      }
-                      className={`w-full rounded-2xl border p-4 text-left transition ${
-                        isSelected
-                          ? "border-yellow-400 bg-yellow-400/10"
-                          : "border-neutral-800 bg-neutral-950 hover:border-neutral-700"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-black text-white">
-                            {entry.word}
-                          </p>
+                <p className="mt-2 text-2xl font-black text-white">
+                  {graphStats.relationships}
+                </p>
+              </div>
 
-                          <p className="mt-1 text-xs text-neutral-500">
-                            /{entry.slug} · {entry.status}
-                          </p>
-                        </div>
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                  With Concepts
+                </p>
 
-                        <div className="flex shrink-0 gap-1">
-                          <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
-                            {assignment?.conceptIds.length ?? 0} C
-                          </span>
+                <p className="mt-2 text-2xl font-black text-white">
+                  {graphStats.entriesWithConcepts}
+                </p>
+              </div>
 
-                          <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
-                            {entryRelationshipCount} R
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                  Related
+                </p>
+
+                <p className="mt-2 text-2xl font-black text-white">
+                  {graphStats.entriesWithRelationships}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                  Fully Connected
+                </p>
+
+                <p className="mt-2 text-2xl font-black text-white">
+                  {graphStats.fullyConnectedEntries}
+                </p>
               </div>
             </section>
 
-            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-              {selectedEntry ? (
-                <>
-                  <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-                          Selected Entry
-                        </p>
+            {(unmatchedAssignmentCount > 0 ||
+              unmatchedRelationshipCount > 0) && (
+              <div className="mb-5 rounded-xl border border-orange-400/20 bg-orange-400/10 p-4 text-sm text-orange-100">
+                Supabase contains{" "}
+                <strong>
+                  {unmatchedAssignmentCount}
+                </strong>{" "}
+                unmatched concept link
+                {unmatchedAssignmentCount === 1
+                  ? ""
+                  : "s"}{" "}
+                and{" "}
+                <strong>
+                  {unmatchedRelationshipCount}
+                </strong>{" "}
+                unmatched relationship
+                {unmatchedRelationshipCount === 1
+                  ? ""
+                  : "s"}{" "}
+                that could not be connected to the entries
+                currently loaded in Studio.
+              </div>
+            )}
 
-                        <h3 className="mt-2 text-3xl font-black text-white">
-                          {selectedEntry.word}
-                        </h3>
+            <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-2 sm:flex-row">
+              <div className="grid flex-1 grid-cols-2 gap-2">
+                <button
+                  onClick={() =>
+                    setActiveTab("entry")
+                  }
+                  className={`rounded-xl px-4 py-3 text-sm font-black ${
+                    activeTab === "entry"
+                      ? "bg-sky-400 text-black"
+                      : "text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  Entry Network
+                </button>
 
-                        <p className="mt-1 text-sm text-neutral-500">
-                          /{selectedEntry.slug} ·{" "}
-                          {selectedEntry.status}
-                        </p>
-                      </div>
+                <button
+                  onClick={() =>
+                    setActiveTab("concept")
+                  }
+                  className={`rounded-xl px-4 py-3 text-sm font-black ${
+                    activeTab === "concept"
+                      ? "bg-sky-400 text-black"
+                      : "text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  Concept Network
+                </button>
+              </div>
 
-                      <div className="grid grid-cols-2 gap-2 sm:flex">
-                        {onOpenEntry && (
-                          <button
-                            onClick={() =>
-                              openEntry(selectedEntry)
-                            }
-                            className="rounded-xl bg-yellow-400 px-4 py-3 text-xs font-black text-black hover:bg-yellow-300"
-                          >
-                            Open Entry
-                          </button>
-                        )}
+              <div className="grid grid-cols-2 gap-2">
+                {onOpenCloudConcepts && (
+                  <button
+                    onClick={openCloudConcepts}
+                    className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-xs font-black text-white hover:border-sky-400 hover:text-sky-300"
+                  >
+                    Edit Concepts
+                  </button>
+                )}
 
+                {onOpenCloudRelationships && (
+                  <button
+                    onClick={openCloudRelationships}
+                    className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-xs font-black text-white hover:border-sky-400 hover:text-sky-300"
+                  >
+                    Edit Relationships
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {activeTab === "entry" ? (
+              <div className="grid gap-5 xl:grid-cols-[0.8fr_1.35fr]">
+                <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                  <h3 className="font-black text-white">
+                    Select an Entry
+                  </h3>
+
+                  <p className="mt-1 text-sm text-neutral-500">
+                    Choose an entry to explore its permanent
+                    cloud neighborhood.
+                  </p>
+
+                  <input
+                    value={entrySearch}
+                    onChange={(event) =>
+                      setEntrySearch(event.target.value)
+                    }
+                    placeholder="Search entries..."
+                    className="mt-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-sky-400"
+                  />
+
+                  <div className="mt-4 max-h-[65vh] space-y-2 overflow-y-auto pr-1">
+                    {filteredEntryChoices.map((entry) => {
+                      const entryId = String(entry.id);
+
+                      const conceptCount =
+                        conceptCountsByEntry.get(entryId) ??
+                        0;
+
+                      const relationshipCount =
+                        relationshipCountsByEntry.get(
+                          entryId
+                        ) ?? 0;
+
+                      const isSelected =
+                        selectedEntryId === entryId;
+
+                      return (
                         <button
-                          onClick={exportSelectedEntryGraph}
-                          className="rounded-xl bg-neutral-800 px-4 py-3 text-xs font-black text-white hover:bg-neutral-700"
+                          key={entry.id}
+                          type="button"
+                          onClick={() =>
+                            selectEntry(entryId)
+                          }
+                          className={`w-full rounded-2xl border p-4 text-left transition ${
+                            isSelected
+                              ? "border-sky-400 bg-sky-400/10"
+                              : "border-neutral-800 bg-neutral-950 hover:border-neutral-700"
+                          }`}
                         >
-                          Export Graph
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-black text-white">
+                                {entry.word}
+                              </p>
+
+                              <p className="mt-1 text-xs text-neutral-500">
+                                /{entry.slug} ·{" "}
+                                {entry.status}
+                              </p>
+                            </div>
+
+                            <div className="flex shrink-0 gap-1">
+                              <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
+                                {conceptCount} C
+                              </span>
+
+                              <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
+                                {relationshipCount} R
+                              </span>
+                            </div>
+                          </div>
                         </button>
-                      </div>
-                    </div>
-
-                    {selectedEntry.meanings[0]?.definition && (
-                      <p className="mt-4 text-sm leading-6 text-neutral-400">
-                        {selectedEntry.meanings[0].definition}
-                      </p>
-                    )}
+                      );
+                    })}
                   </div>
+                </section>
 
-                  <section className="mt-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <h3 className="font-black text-white">
-                          Assigned Concepts
-                        </h3>
+                <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                  {selectedEntry ? (
+                    <>
+                      <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                              Cloud Entry Network
+                            </p>
 
-                        <p className="mt-1 text-sm text-neutral-500">
-                          Semantic and cultural categories connected
-                          to this entry.
-                        </p>
+                            <h3 className="mt-2 text-3xl font-black text-white">
+                              {selectedEntry.word}
+                            </h3>
+
+                            <p className="mt-1 text-sm text-neutral-500">
+                              /{selectedEntry.slug} ·{" "}
+                              {selectedEntry.status}
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            {onOpenEntry && (
+                              <button
+                                onClick={() =>
+                                  openEntry(selectedEntry)
+                                }
+                                className="rounded-xl bg-sky-400 px-4 py-3 text-xs font-black text-black hover:bg-sky-300"
+                              >
+                                Open Entry
+                              </button>
+                            )}
+
+                            <button
+                              onClick={
+                                exportSelectedEntryGraph
+                              }
+                              className="rounded-xl bg-neutral-800 px-4 py-3 text-xs font-black text-white hover:bg-neutral-700"
+                            >
+                              Export Graph
+                            </button>
+                          </div>
+                        </div>
+
+                        {selectedEntry.meanings?.[0]
+                          ?.definition && (
+                          <p className="mt-4 text-sm leading-6 text-neutral-400">
+                            {
+                              selectedEntry.meanings[0]
+                                .definition
+                            }
+                          </p>
+                        )}
                       </div>
 
-                      <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs font-black text-neutral-300">
-                        {selectedEntryConcepts.length}
-                      </span>
-                    </div>
+                      <section className="mt-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className="font-black text-white">
+                              Cloud Concepts
+                            </h3>
 
-                    {selectedEntryConcepts.length === 0 ? (
-                      <p className="mt-4 text-sm text-neutral-500">
-                        No concepts are assigned to this entry.
-                      </p>
-                    ) : (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {selectedEntryConcepts.map((concept) => (
+                            <p className="mt-1 text-sm text-neutral-500">
+                              Permanent semantic and cultural
+                              categories assigned in Supabase.
+                            </p>
+                          </div>
+
+                          <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs font-black text-neutral-300">
+                            {selectedEntryConcepts.length}
+                          </span>
+                        </div>
+
+                        {selectedEntryConcepts.length ===
+                        0 ? (
+                          <div className="mt-4 rounded-xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
+                            No cloud concepts are assigned to
+                            this entry.
+                          </div>
+                        ) : (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {selectedEntryConcepts.map(
+                              (concept) => (
+                                <button
+                                  key={concept.id}
+                                  type="button"
+                                  onClick={() =>
+                                    selectConcept(
+                                      String(concept.id)
+                                    )
+                                  }
+                                  className={`rounded-full border px-3 py-2 text-xs font-black ${getConceptColorClasses(
+                                    concept.color
+                                  )}`}
+                                >
+                                  {concept.name}
+                                </button>
+                              )
+                            )}
+                          </div>
+                        )}
+                      </section>
+
+                      <section className="mt-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h3 className="font-black text-white">
+                              Cloud Relationships
+                            </h3>
+
+                            <p className="mt-1 text-sm text-neutral-500">
+                              Follow permanent entry
+                              connections stored in Supabase.
+                            </p>
+                          </div>
+
+                          <input
+                            value={networkSearch}
+                            onChange={(event) =>
+                              setNetworkSearch(
+                                event.target.value
+                              )
+                            }
+                            placeholder="Search connections..."
+                            className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-sky-400 sm:max-w-xs"
+                          />
+                        </div>
+
+                        {connectedEntries.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
+                            This entry has no cloud
+                            relationships yet.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {connectedEntries.map(
+                              ({
+                                entry,
+                                relationships:
+                                  connectedRelationships,
+                              }) => (
+                                <div
+                                  key={entry.id}
+                                  className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4"
+                                >
+                                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-lg font-black text-white">
+                                        {entry.word}
+                                      </p>
+
+                                      <p className="mt-1 text-xs text-neutral-500">
+                                        /{entry.slug} ·{" "}
+                                        {entry.status}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex shrink-0 gap-2">
+                                      <button
+                                        onClick={() =>
+                                          selectEntry(
+                                            String(entry.id)
+                                          )
+                                        }
+                                        className="rounded-xl bg-neutral-800 px-3 py-2 text-xs font-black text-white hover:bg-neutral-700"
+                                      >
+                                        Follow
+                                      </button>
+
+                                      {onOpenEntry && (
+                                        <button
+                                          onClick={() =>
+                                            openEntry(entry)
+                                          }
+                                          className="rounded-xl bg-sky-400 px-3 py-2 text-xs font-black text-black hover:bg-sky-300"
+                                        >
+                                          Open
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {connectedRelationships.map(
+                                      (relationship) => (
+                                        <span
+                                          key={
+                                            relationship.id
+                                          }
+                                          className={`rounded-full border px-3 py-1 text-xs font-black ${getRelationshipClasses(
+                                            relationship.type
+                                          )}`}
+                                        >
+                                          {relationship.isBidirectional
+                                            ? "↔"
+                                            : String(
+                                                relationship.sourceEntryId
+                                              ) ===
+                                              selectedEntryId
+                                            ? "→"
+                                            : "←"}{" "}
+                                          {relationship.type}
+                                        </span>
+                                      )
+                                    )}
+                                  </div>
+
+                                  {connectedRelationships
+                                    .map((relationship) =>
+                                      relationship.note.trim()
+                                    )
+                                    .filter(Boolean)
+                                    .map(
+                                      (
+                                        relationshipNote,
+                                        index
+                                      ) => (
+                                        <p
+                                          key={`${entry.id}-note-${index}`}
+                                          className="mt-3 text-sm leading-6 text-neutral-400"
+                                        >
+                                          {relationshipNote}
+                                        </p>
+                                      )
+                                    )}
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+                      </section>
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
+                      Select an entry from the left to
+                      explore its complete cloud network.
+                    </div>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <div className="grid gap-5 xl:grid-cols-[0.8fr_1.35fr]">
+                <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                  <h3 className="font-black text-white">
+                    Browse Cloud Concepts
+                  </h3>
+
+                  <p className="mt-1 text-sm text-neutral-500">
+                    Select a Supabase concept to view every
+                    linked entry.
+                  </p>
+
+                  <input
+                    value={conceptSearch}
+                    onChange={(event) =>
+                      setConceptSearch(event.target.value)
+                    }
+                    placeholder="Search cloud concepts..."
+                    className="mt-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-sky-400"
+                  />
+
+                  {filteredConcepts.length === 0 ? (
+                    <div className="mt-4 rounded-xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
+                      No cloud concepts were found.
+                    </div>
+                  ) : (
+                    <div className="mt-4 max-h-[65vh] space-y-2 overflow-y-auto pr-1">
+                      {filteredConcepts.map((concept) => {
+                        const isSelected =
+                          selectedConceptId ===
+                          String(concept.id);
+
+                        const usage =
+                          conceptUsageCounts.get(
+                            String(concept.id)
+                          ) ?? 0;
+
+                        return (
                           <button
                             key={concept.id}
                             type="button"
                             onClick={() =>
-                              selectConcept(String(concept.id))
+                              selectConcept(
+                                String(concept.id)
+                              )
                             }
-                            className={`rounded-full border px-3 py-2 text-xs font-black ${getConceptColorClasses(
-                              concept.color
-                            )}`}
-                          >
-                            {concept.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-
-                  <section className="mt-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h3 className="font-black text-white">
-                          Direct Relationships
-                        </h3>
-
-                        <p className="mt-1 text-sm text-neutral-500">
-                          Follow connected entries through the
-                          relationship network.
-                        </p>
-                      </div>
-
-                      <input
-                        value={networkSearch}
-                        onChange={(event) =>
-                          setNetworkSearch(event.target.value)
-                        }
-                        placeholder="Search connections..."
-                        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400 sm:max-w-xs"
-                      />
-                    </div>
-
-                    {connectedEntries.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
-                        This entry has no direct relationships yet.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {connectedEntries.map(
-                          ({ entry, relationships: entryRelationships }) => (
-                            <div
-                              key={entry.id}
-                              className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4"
-                            >
-                              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="min-w-0">
-                                  <p className="truncate text-lg font-black text-white">
-                                    {entry.word}
-                                  </p>
-
-                                  <p className="mt-1 text-xs text-neutral-500">
-                                    /{entry.slug} · {entry.status}
-                                  </p>
-                                </div>
-
-                                <div className="flex shrink-0 gap-2">
-                                  <button
-                                    onClick={() =>
-                                      selectEntry(String(entry.id))
-                                    }
-                                    className="rounded-xl bg-neutral-800 px-3 py-2 text-xs font-black text-white hover:bg-neutral-700"
-                                  >
-                                    Follow
-                                  </button>
-
-                                  {onOpenEntry && (
-                                    <button
-                                      onClick={() =>
-                                        openEntry(entry)
-                                      }
-                                      className="rounded-xl bg-yellow-400 px-3 py-2 text-xs font-black text-black hover:bg-yellow-300"
-                                    >
-                                      Open
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {entryRelationships.map(
-                                  (relationship) => (
-                                    <span
-                                      key={relationship.id}
-                                      className={`rounded-full border px-3 py-1 text-xs font-black ${getRelationshipClasses(
-                                        relationship.type
-                                      )}`}
-                                    >
-                                      {relationship.isBidirectional
-                                        ? "↔"
-                                        : String(
-                                            relationship.sourceEntryId
-                                          ) === selectedEntryId
-                                        ? "→"
-                                        : "←"}{" "}
-                                      {relationship.type}
-                                    </span>
-                                  )
-                                )}
-                              </div>
-
-                              {entryRelationships
-                                .map((relationship) =>
-                                  relationship.note.trim()
-                                )
-                                .filter(Boolean)
-                                .map((relationshipNote, index) => (
-                                  <p
-                                    key={`${entry.id}-note-${index}`}
-                                    className="mt-3 text-sm leading-6 text-neutral-400"
-                                  >
-                                    {relationshipNote}
-                                  </p>
-                                ))}
-                            </div>
-                          )
-                        )}
-                      </div>
-                    )}
-                  </section>
-                </>
-              ) : (
-                <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
-                  Select an entry from the left to explore its
-                  complete network.
-                </div>
-              )}
-            </section>
-          </div>
-        ) : (
-          <div className="grid gap-5 xl:grid-cols-[0.8fr_1.35fr]">
-            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-              <h3 className="font-black text-white">
-                Browse Concepts
-              </h3>
-
-              <p className="mt-1 text-sm text-neutral-500">
-                Select a concept to view every linked entry.
-              </p>
-
-              {sortedConcepts.length === 0 ? (
-                <div className="mt-4 rounded-xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
-                  No concepts have been created yet.
-                </div>
-              ) : (
-                <div className="mt-4 max-h-[65vh] space-y-2 overflow-y-auto pr-1">
-                  {sortedConcepts.map((concept) => {
-                    const isSelected =
-                      selectedConceptId === String(concept.id);
-
-                    const usage =
-                      conceptUsageCounts.get(String(concept.id)) ??
-                      0;
-
-                    return (
-                      <button
-                        key={concept.id}
-                        type="button"
-                        onClick={() =>
-                          selectConcept(String(concept.id))
-                        }
-                        className={`w-full rounded-2xl border p-4 text-left transition ${
-                          isSelected
-                            ? "border-yellow-400 bg-yellow-400/10"
-                            : "border-neutral-800 bg-neutral-950 hover:border-neutral-700"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate font-black text-white">
-                              {concept.name}
-                            </p>
-
-                            <p className="mt-1 text-xs text-neutral-500">
-                              /{concept.slug}
-                            </p>
-                          </div>
-
-                          <span className="rounded-full bg-neutral-800 px-2 py-1 text-xs font-black text-neutral-300">
-                            {usage} linked
-                          </span>
-                        </div>
-
-                        <span
-                          className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${getConceptColorClasses(
-                            concept.color
-                          )}`}
-                        >
-                          {concept.category}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-              {selectedConcept ? (
-                <>
-                  <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-                          Selected Concept
-                        </p>
-
-                        <h3 className="mt-2 text-3xl font-black text-white">
-                          {selectedConcept.name}
-                        </h3>
-
-                        <p className="mt-1 text-sm text-neutral-500">
-                          /{selectedConcept.slug} ·{" "}
-                          {selectedConceptEntries.length} linked
-                          entries
-                        </p>
-                      </div>
-
-                      <span
-                        className={`w-fit rounded-full border px-3 py-2 text-xs font-black ${getConceptColorClasses(
-                          selectedConcept.color
-                        )}`}
-                      >
-                        {selectedConcept.category}
-                      </span>
-                    </div>
-
-                    {selectedConcept.description && (
-                      <p className="mt-4 text-sm leading-6 text-neutral-400">
-                        {selectedConcept.description}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h3 className="font-black text-white">
-                        Linked Entries
-                      </h3>
-
-                      <p className="mt-1 text-sm text-neutral-500">
-                        Follow an entry to switch back into the
-                        entry network.
-                      </p>
-                    </div>
-
-                    <input
-                      value={conceptEntrySearch}
-                      onChange={(event) =>
-                        setConceptEntrySearch(event.target.value)
-                      }
-                      placeholder="Search linked entries..."
-                      className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400 sm:max-w-xs"
-                    />
-                  </div>
-
-                  {selectedConceptEntries.length === 0 ? (
-                    <div className="mt-4 rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
-                      No entries are linked to this concept.
-                    </div>
-                  ) : (
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      {selectedConceptEntries.map((entry) => {
-                        const entryRelationshipCount =
-                          validRelationships.filter(
-                            (relationship) => {
-                              return (
-                                String(
-                                  relationship.sourceEntryId
-                                ) === String(entry.id) ||
-                                String(
-                                  relationship.targetEntryId
-                                ) === String(entry.id)
-                              );
-                            }
-                          ).length;
-
-                        return (
-                          <div
-                            key={entry.id}
-                            className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                            className={`w-full rounded-2xl border p-4 text-left transition ${
+                              isSelected
+                                ? "border-sky-400 bg-sky-400/10"
+                                : "border-neutral-800 bg-neutral-950 hover:border-neutral-700"
+                            }`}
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="truncate font-black text-white">
-                                  {entry.word}
+                                  {concept.name}
                                 </p>
 
                                 <p className="mt-1 text-xs text-neutral-500">
-                                  /{entry.slug} ·{" "}
-                                  {entryRelationshipCount} direct
-                                  relationship
-                                  {entryRelationshipCount === 1
-                                    ? ""
-                                    : "s"}
+                                  /{concept.slug}
                                 </p>
                               </div>
 
-                              <div className="flex shrink-0 gap-2">
-                                <button
-                                  onClick={() =>
-                                    selectEntry(String(entry.id))
-                                  }
-                                  className="rounded-xl bg-neutral-800 px-3 py-2 text-xs font-black text-white hover:bg-neutral-700"
-                                >
-                                  Follow
-                                </button>
-
-                                {onOpenEntry && (
-                                  <button
-                                    onClick={() =>
-                                      openEntry(entry)
-                                    }
-                                    className="rounded-xl bg-yellow-400 px-3 py-2 text-xs font-black text-black hover:bg-yellow-300"
-                                  >
-                                    Open
-                                  </button>
-                                )}
-                              </div>
+                              <span className="rounded-full bg-neutral-800 px-2 py-1 text-xs font-black text-neutral-300">
+                                {usage} linked
+                              </span>
                             </div>
-                          </div>
+
+                            <span
+                              className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${getConceptColorClasses(
+                                concept.color
+                              )}`}
+                            >
+                              {concept.category}
+                            </span>
+                          </button>
                         );
                       })}
                     </div>
                   )}
-                </>
-              ) : (
-                <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
-                  Select a concept from the left to explore its
-                  linked entries.
-                </div>
-              )}
-            </section>
-          </div>
+                </section>
+
+                <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                  {selectedConcept ? (
+                    <>
+                      <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                              Cloud Concept Network
+                            </p>
+
+                            <h3 className="mt-2 text-3xl font-black text-white">
+                              {selectedConcept.name}
+                            </h3>
+
+                            <p className="mt-1 text-sm text-neutral-500">
+                              /{selectedConcept.slug} ·{" "}
+                              {
+                                allSelectedConceptEntries.length
+                              }{" "}
+                              linked entries
+                            </p>
+                          </div>
+
+                          <span
+                            className={`w-fit rounded-full border px-3 py-2 text-xs font-black ${getConceptColorClasses(
+                              selectedConcept.color
+                            )}`}
+                          >
+                            {selectedConcept.category}
+                          </span>
+                        </div>
+
+                        {selectedConcept.description && (
+                          <p className="mt-4 text-sm leading-6 text-neutral-400">
+                            {
+                              selectedConcept.description
+                            }
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="font-black text-white">
+                            Linked Cloud Entries
+                          </h3>
+
+                          <p className="mt-1 text-sm text-neutral-500">
+                            Follow an entry to return to the
+                            entry network.
+                          </p>
+                        </div>
+
+                        <input
+                          value={conceptEntrySearch}
+                          onChange={(event) =>
+                            setConceptEntrySearch(
+                              event.target.value
+                            )
+                          }
+                          placeholder="Search linked entries..."
+                          className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-sky-400 sm:max-w-xs"
+                        />
+                      </div>
+
+                      {filteredSelectedConceptEntries.length ===
+                      0 ? (
+                        <div className="mt-4 rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
+                          {allSelectedConceptEntries.length ===
+                          0
+                            ? "No entries are linked to this cloud concept."
+                            : "No linked entries match your search."}
+                        </div>
+                      ) : (
+                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                          {filteredSelectedConceptEntries.map(
+                            (entry) => {
+                              const entryId = String(
+                                entry.id
+                              );
+
+                              const relationshipCount =
+                                relationshipCountsByEntry.get(
+                                  entryId
+                                ) ?? 0;
+
+                              const conceptCount =
+                                conceptCountsByEntry.get(
+                                  entryId
+                                ) ?? 0;
+
+                              return (
+                                <div
+                                  key={entry.id}
+                                  className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate font-black text-white">
+                                        {entry.word}
+                                      </p>
+
+                                      <p className="mt-1 text-xs text-neutral-500">
+                                        {conceptCount} concepts
+                                        ·{" "}
+                                        {relationshipCount}{" "}
+                                        relationships
+                                      </p>
+                                    </div>
+
+                                    <div className="flex shrink-0 gap-2">
+                                      <button
+                                        onClick={() =>
+                                          selectEntry(
+                                            entryId
+                                          )
+                                        }
+                                        className="rounded-xl bg-neutral-800 px-3 py-2 text-xs font-black text-white hover:bg-neutral-700"
+                                      >
+                                        Follow
+                                      </button>
+
+                                      {onOpenEntry && (
+                                        <button
+                                          onClick={() =>
+                                            openEntry(entry)
+                                          }
+                                          className="rounded-xl bg-sky-400 px-3 py-2 text-xs font-black text-black hover:bg-sky-300"
+                                        >
+                                          Open
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
+                      Select a cloud concept from the left to
+                      explore its linked entries.
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+          </>
         )}
 
-        <div className="mt-6 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-          <p className="font-black text-yellow-100">
-            Alpha 3.6 note
+        <div className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
+          <p className="font-black text-sky-100">
+            Alpha 3.7C4B note
           </p>
 
-          <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-            The Unified Graph Explorer combines entry concepts and
-            direct relationships. The next step will move the local
-            Knowledge Graph into Supabase so it works across devices
-            and production sessions.
+          <p className="mt-2 text-sm leading-6 text-sky-100/70">
+            The Unified Graph Explorer now reads concepts,
+            assignments, and relationships directly from
+            Supabase. Graph Health and Graph Explorer are
+            both fully cloud-backed.
           </p>
         </div>
       </aside>
