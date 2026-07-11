@@ -35,6 +35,7 @@ type SidebarProps = {
   onOpenConcepts?: () => void;
   onOpenGraphStats?: () => void;
   onOpenMergeConcepts?: () => void;
+  onOpenRelationships?: () => void;
 
   userEmail?: string | null;
   onLogout?: () => void;
@@ -52,7 +53,7 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.4";
+const VERSION_LABEL = "Alpha 3.5";
 
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -283,10 +284,9 @@ export function Sidebar(props: SidebarProps) {
   {
     key: "relationships",
     label: "Relationships",
-    description: "Connect slang entries together.",
+    description: "Connect slang entries directly.",
     icon: "🕸️",
-    soon: true,
-    disabled: true,
+    action: props.onOpenRelationships,
   },
 ];
 
@@ -504,6 +504,17 @@ export function Sidebar(props: SidebarProps) {
     Merge Concepts
   </button>
 )}
+
+{props.onOpenRelationships && (
+  <button
+    type="button"
+    onClick={props.onOpenRelationships}
+    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+  >
+    🕸️ Relationships
+  </button>
+)}
+
 </div>
         </div>
       </div>

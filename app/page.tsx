@@ -18,6 +18,7 @@ import { EntryEditorModal } from "@/components/entries/EntryEditorModal";
 import { ConceptDrawer } from "@/components/concepts/ConceptDrawer";
 import { GraphStatsDrawer } from "@/components/concepts/GraphStatsDrawer";
 import { MergeConceptsDrawer } from "@/components/concepts/MergeConceptsDrawer";
+import { RelationshipDrawer } from "@/components/relationships/RelationshipDrawer";
 
 type WorkspaceMode =
   | "all"
@@ -66,7 +67,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.3";
+const APP_VERSION = "Alpha 3.5";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -307,6 +308,7 @@ const [graphRevision, setGraphRevision] = useState(0);
   const [toast, setToast] = useState<ToastState>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [workingLabel, setWorkingLabel] = useState("");
+  const [isRelationshipsOpen, setIsRelationshipsOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -1054,6 +1056,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       onOpenConcepts={() => setIsConceptsOpen(true)}
       onOpenGraphStats={() => setIsGraphStatsOpen(true)}
       onOpenMergeConcepts={() => setIsMergeConceptsOpen(true)}
+      onOpenRelationships={() => setIsRelationshipsOpen(true)}
     />
 
     <section className="flex-1">
@@ -1357,7 +1360,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio {APP_VERSION} · Graph Health
+            YERRR Studio {APP_VERSION} · Entry Relationships
           </footer>
         </div>
       </section>
@@ -1737,6 +1740,16 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   entries={entries}
   onMerged={() => {
     setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<RelationshipDrawer
+  isOpen={isRelationshipsOpen}
+  onClose={() => setIsRelationshipsOpen(false)}
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsRelationshipsOpen(false);
+    setSelectedEntry(entry);
   }}
 />
 
