@@ -72,7 +72,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.7C3";
+const APP_VERSION = "Alpha 3.7C4A";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -1403,7 +1403,7 @@ if (!isHydrated) {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio {APP_VERSION} · Cloud Relationship Editor
+            YERRR Studio {APP_VERSION} · Cloud Graph Health
           </footer>
         </div>
       </section>
@@ -1864,7 +1864,7 @@ if (!isHydrated) {
   entries={entries}
   onOpenConcepts={() => {
     setIsGraphStatsOpen(false);
-    setIsConceptsOpen(true);
+    setIsCloudConceptEditorOpen(true);
   }}
   onOpenEntry={(entry) => {
     setIsGraphStatsOpen(false);

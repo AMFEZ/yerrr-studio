@@ -58,7 +58,7 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.7C3";
+const VERSION_LABEL = "Alpha 3.7C4A";
 
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -275,7 +275,7 @@ export function Sidebar(props: SidebarProps) {
   {
     key: "graph-health",
     label: "Graph Health",
-    description: "Measure coverage and find graph gaps.",
+    description: "Measure Supabase coverage and graph gaps.",
     icon: "📊",
     action: props.onOpenGraphStats,
   },
