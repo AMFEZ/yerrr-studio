@@ -19,6 +19,7 @@ import { ConceptDrawer } from "@/components/concepts/ConceptDrawer";
 import { GraphStatsDrawer } from "@/components/concepts/GraphStatsDrawer";
 import { MergeConceptsDrawer } from "@/components/concepts/MergeConceptsDrawer";
 import { RelationshipDrawer } from "@/components/relationships/RelationshipDrawer";
+import { GraphExplorerDrawer } from "@/components/relationships/GraphExplorerDrawer";
 
 type WorkspaceMode =
   | "all"
@@ -309,6 +310,7 @@ const [graphRevision, setGraphRevision] = useState(0);
   const [isWorking, setIsWorking] = useState(false);
   const [workingLabel, setWorkingLabel] = useState("");
   const [isRelationshipsOpen, setIsRelationshipsOpen] = useState(false);
+  const [isGraphExplorerOpen, setIsGraphExplorerOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -1057,6 +1059,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       onOpenGraphStats={() => setIsGraphStatsOpen(true)}
       onOpenMergeConcepts={() => setIsMergeConceptsOpen(true)}
       onOpenRelationships={() => setIsRelationshipsOpen(true)}
+      onOpenGraphExplorer={() => setIsGraphExplorerOpen(true)}
     />
 
     <section className="flex-1">
@@ -1740,6 +1743,16 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   entries={entries}
   onMerged={() => {
     setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<GraphExplorerDrawer
+  isOpen={isGraphExplorerOpen}
+  onClose={() => setIsGraphExplorerOpen(false)}
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsGraphExplorerOpen(false);
+    setSelectedEntry(entry);
   }}
 />
 

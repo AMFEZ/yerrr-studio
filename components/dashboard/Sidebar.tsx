@@ -36,6 +36,7 @@ type SidebarProps = {
   onOpenGraphStats?: () => void;
   onOpenMergeConcepts?: () => void;
   onOpenRelationships?: () => void;
+  onOpenGraphExplorer?: () => void;
 
   userEmail?: string | null;
   onLogout?: () => void;
@@ -53,7 +54,7 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.5";
+const VERSION_LABEL = "Alpha 3.6";
 
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -284,9 +285,16 @@ export function Sidebar(props: SidebarProps) {
   {
     key: "relationships",
     label: "Relationships",
-    description: "Connect slang entries directly.",
+    description: "Create direct entry connections.",
     icon: "🕸️",
     action: props.onOpenRelationships,
+  },
+  {
+    key: "graph-explorer",
+    label: "Graph Explorer",
+    description: "Explore concepts and relationships together.",
+    icon: "🧭",
+    action: props.onOpenGraphExplorer,
   },
 ];
 
@@ -512,6 +520,16 @@ export function Sidebar(props: SidebarProps) {
     className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
   >
     🕸️ Relationships
+  </button>
+)}
+
+{props.onOpenGraphExplorer && (
+  <button
+    type="button"
+    onClick={props.onOpenGraphExplorer}
+    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+  >
+    🧭 Graph Explorer
   </button>
 )}
 
