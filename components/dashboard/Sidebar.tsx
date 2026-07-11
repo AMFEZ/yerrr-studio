@@ -33,6 +33,8 @@ type SidebarProps = {
   onOpenActivity?: () => void;
   onOpenBackup?: () => void;
   onOpenConcepts?: () => void;
+  onOpenGraphStats?: () => void;
+  onOpenMergeConcepts?: () => void;
 
   userEmail?: string | null;
   onLogout?: () => void;
@@ -50,8 +52,8 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
+const VERSION_LABEL = "Alpha 3.4";
 
-const VERSION_LABEL = "Alpha 2.20";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -260,9 +262,23 @@ export function Sidebar(props: SidebarProps) {
   {
     key: "concepts",
     label: "Concepts",
-    description: "Create Knowledge Graph concepts.",
+    description: "Create, assign, and browse concepts.",
     icon: "🧠",
     action: props.onOpenConcepts,
+  },
+  {
+    key: "graph-health",
+    label: "Graph Health",
+    description: "Measure coverage and find graph gaps.",
+    icon: "📊",
+    action: props.onOpenGraphStats,
+  },
+  {
+    key: "merge-concepts",
+    label: "Merge Concepts",
+    description: "Combine duplicate concepts safely.",
+    icon: "🔀",
+    action: props.onOpenMergeConcepts,
   },
   {
     key: "relationships",
@@ -428,37 +444,67 @@ export function Sidebar(props: SidebarProps) {
             <option value="trash">Trash</option>
           </select>
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {(props.onCreateEntry || props.onNewEntry || props.openCreateModal) && (
-              <button
-                type="button"
-                onClick={createEntry}
-                className="rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
-              >
-                + Entry
-              </button>
-            )}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+  {(props.onCreateEntry || props.onNewEntry || props.openCreateModal) && (
+    <button
+      type="button"
+      onClick={createEntry}
+      className="rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
+    >
+      + Entry
+    </button>
+  )}
 
-            {props.onOpenActivity && (
-              <button
-                type="button"
-                onClick={props.onOpenActivity}
-                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                Activity
-              </button>
-            )}
+  {props.onOpenActivity && (
+    <button
+      type="button"
+      onClick={props.onOpenActivity}
+      className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+    >
+      Activity
+    </button>
+  )}
 
-            {props.onOpenBackup && (
-              <button
-                type="button"
-                onClick={props.onOpenBackup}
-                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                Backup
-              </button>
-            )}
-          </div>
+  {props.onOpenBackup && (
+    <button
+      type="button"
+      onClick={props.onOpenBackup}
+      className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+    >
+      Backup
+    </button>
+  )}
+
+  {props.onOpenConcepts && (
+    <button
+      type="button"
+      onClick={props.onOpenConcepts}
+      className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+    >
+      Concepts
+    </button>
+  )}
+
+  {props.onOpenGraphStats && (
+    <button
+      type="button"
+      onClick={props.onOpenGraphStats}
+      className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+    >
+      📊 Graph Health
+    </button>
+  )}
+
+  {props.onOpenMergeConcepts && (
+  <button
+    type="button"
+    onClick={props.onOpenMergeConcepts}
+    className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+  >
+    Merge Concepts
+  </button>
+)}
+</div>
         </div>
       </div>
 

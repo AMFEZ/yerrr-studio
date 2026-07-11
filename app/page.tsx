@@ -16,6 +16,8 @@ import { EntryCard } from "@/components/entries/EntryCard";
 import { CaptureModal } from "@/components/entries/CaptureModal";
 import { EntryEditorModal } from "@/components/entries/EntryEditorModal";
 import { ConceptDrawer } from "@/components/concepts/ConceptDrawer";
+import { GraphStatsDrawer } from "@/components/concepts/GraphStatsDrawer";
+import { MergeConceptsDrawer } from "@/components/concepts/MergeConceptsDrawer";
 
 type WorkspaceMode =
   | "all"
@@ -64,7 +66,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.1";
+const APP_VERSION = "Alpha 3.3";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -292,6 +294,9 @@ export default function Home() {
   const [isBackupToolsOpen, setIsBackupToolsOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
   const [isConceptsOpen, setIsConceptsOpen] = useState(false);
+  const [isGraphStatsOpen, setIsGraphStatsOpen] = useState(false);
+  const [isMergeConceptsOpen, setIsMergeConceptsOpen] = useState(false);
+const [graphRevision, setGraphRevision] = useState(0);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("all");
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
@@ -1047,6 +1052,8 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       onOpenActivity={() => setIsActivityOpen(true)}
       onOpenBackup={() => setIsBackupToolsOpen(true)}
       onOpenConcepts={() => setIsConceptsOpen(true)}
+      onOpenGraphStats={() => setIsGraphStatsOpen(true)}
+      onOpenMergeConcepts={() => setIsMergeConceptsOpen(true)}
     />
 
     <section className="flex-1">
@@ -1350,7 +1357,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio {APP_VERSION} · Assign Concepts to Entries
+            YERRR Studio {APP_VERSION} · Graph Health
           </footer>
         </div>
       </section>
@@ -1724,7 +1731,32 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
           </aside>
         </div>
       )}
+      <MergeConceptsDrawer
+  isOpen={isMergeConceptsOpen}
+  onClose={() => setIsMergeConceptsOpen(false)}
+  entries={entries}
+  onMerged={() => {
+    setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<GraphStatsDrawer
+  key={`graph-stats-${graphRevision}`}
+  isOpen={isGraphStatsOpen}
+  onClose={() => setIsGraphStatsOpen(false)}
+  entries={entries}
+  onOpenConcepts={() => {
+    setIsGraphStatsOpen(false);
+    setIsConceptsOpen(true);
+  }}
+  onOpenEntry={(entry) => {
+    setIsGraphStatsOpen(false);
+    setSelectedEntry(entry);
+  }}
+/>
+
 <ConceptDrawer
+  key={`concepts-${graphRevision}`}
   isOpen={isConceptsOpen}
   onClose={() => setIsConceptsOpen(false)}
   entries={entries}
