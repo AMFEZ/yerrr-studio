@@ -20,6 +20,8 @@ import { GraphStatsDrawer } from "@/components/concepts/GraphStatsDrawer";
 import { MergeConceptsDrawer } from "@/components/concepts/MergeConceptsDrawer";
 import { RelationshipDrawer } from "@/components/relationships/RelationshipDrawer";
 import { GraphExplorerDrawer } from "@/components/relationships/GraphExplorerDrawer";
+import { GraphMigrationDrawer } from "@/components/concepts/GraphMigrationDrawer";
+import { CloudGraphDrawer } from "@/components/concepts/CloudGraphDrawer";
 
 type WorkspaceMode =
   | "all"
@@ -68,7 +70,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.6";
+const APP_VERSION = "Alpha 3.7C1";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -312,6 +314,8 @@ const [graphRevision, setGraphRevision] = useState(0);
   const [isRelationshipsOpen, setIsRelationshipsOpen] = useState(false);
   const [isGraphExplorerOpen, setIsGraphExplorerOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [isGraphMigrationOpen, setIsGraphMigrationOpen] = useState(false);
+  const [isCloudGraphOpen, setIsCloudGraphOpen] = useState(false);
 
 useEffect(() => {
   setIsHydrated(true);
@@ -1087,6 +1091,8 @@ if (!isHydrated) {
       onOpenMergeConcepts={() => setIsMergeConceptsOpen(true)}
       onOpenRelationships={() => setIsRelationshipsOpen(true)}
       onOpenGraphExplorer={() => setIsGraphExplorerOpen(true)}
+      onOpenGraphMigration={() => setIsGraphMigrationOpen(true)}
+      onOpenCloudGraph={() => setIsCloudGraphOpen(true)}
     />
 
     <section className="flex-1">
@@ -1390,7 +1396,7 @@ if (!isHydrated) {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio {APP_VERSION} · Unified Graph Explorer
+            YERRR Studio {APP_VERSION} · Supabase Cloud Graph
           </footer>
         </div>
       </section>
@@ -1769,6 +1775,25 @@ if (!isHydrated) {
   onClose={() => setIsMergeConceptsOpen(false)}
   entries={entries}
   onMerged={() => {
+    setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<CloudGraphDrawer
+  isOpen={isCloudGraphOpen}
+  onClose={() => setIsCloudGraphOpen(false)}
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsCloudGraphOpen(false);
+    setSelectedEntry(entry);
+  }}
+/>
+
+<GraphMigrationDrawer
+  isOpen={isGraphMigrationOpen}
+  onClose={() => setIsGraphMigrationOpen(false)}
+  entries={entries}
+  onMigrated={() => {
     setGraphRevision((currentRevision) => currentRevision + 1);
   }}
 />

@@ -37,6 +37,8 @@ type SidebarProps = {
   onOpenMergeConcepts?: () => void;
   onOpenRelationships?: () => void;
   onOpenGraphExplorer?: () => void;
+  onOpenGraphMigration?: () => void;
+  onOpenCloudGraph?: () => void;
 
   userEmail?: string | null;
   onLogout?: () => void;
@@ -54,7 +56,7 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.6";
+const VERSION_LABEL = "Alpha 3.7C1";
 
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -296,6 +298,21 @@ export function Sidebar(props: SidebarProps) {
     icon: "🧭",
     action: props.onOpenGraphExplorer,
   },
+  {
+  key: "graph-migration",
+  label: "Cloud Migration",
+  description: "Copy the local graph into Supabase.",
+  icon: "☁️",
+  action: props.onOpenGraphMigration,
+},
+{
+  key: "cloud-graph",
+  label: "Cloud Graph",
+  description: "Browse permanent Supabase graph data.",
+  icon: "🌐",
+  action: props.onOpenCloudGraph,
+},
+
 ];
 
   function navigate(key: string) {
@@ -530,6 +547,26 @@ export function Sidebar(props: SidebarProps) {
     className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
   >
     🧭 Graph Explorer
+  </button>
+)}
+
+{props.onOpenGraphMigration && (
+  <button
+    type="button"
+    onClick={props.onOpenGraphMigration}
+    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+  >
+    ☁️ Cloud Migration
+  </button>
+)}
+
+{props.onOpenCloudGraph && (
+  <button
+    type="button"
+    onClick={props.onOpenCloudGraph}
+    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+  >
+    🌐 Cloud Graph
   </button>
 )}
 
