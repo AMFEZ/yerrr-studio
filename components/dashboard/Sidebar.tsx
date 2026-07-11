@@ -40,6 +40,7 @@ type SidebarProps = {
   onOpenGraphMigration?: () => void;
   onOpenCloudGraph?: () => void;
   onOpenCloudConceptEditor?: () => void;
+  onOpenCloudRelationshipEditor?: () => void;
 
   userEmail?: string | null;
   onLogout?: () => void;
@@ -57,7 +58,7 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.7C2";
+const VERSION_LABEL = "Alpha 3.7C3";
 
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -319,6 +320,13 @@ export function Sidebar(props: SidebarProps) {
   description: "Edit concepts and assignments in Supabase.",
   icon: "☁️",
   action: props.onOpenCloudConceptEditor,
+},
+{
+  key: "cloud-relationship-editor",
+  label: "Cloud Relationships",
+  description: "Edit entry relationships in Supabase.",
+  icon: "🔗",
+  action: props.onOpenCloudRelationshipEditor,
 },
 
 ];
@@ -585,6 +593,16 @@ export function Sidebar(props: SidebarProps) {
     className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
   >
     ☁️ Cloud Concepts
+  </button>
+)}
+
+{props.onOpenCloudRelationshipEditor && (
+  <button
+    type="button"
+    onClick={props.onOpenCloudRelationshipEditor}
+    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+  >
+    🔗 Cloud Relationships
   </button>
 )}
 

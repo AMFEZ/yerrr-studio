@@ -23,6 +23,7 @@ import { GraphExplorerDrawer } from "@/components/relationships/GraphExplorerDra
 import { GraphMigrationDrawer } from "@/components/concepts/GraphMigrationDrawer";
 import { CloudGraphDrawer } from "@/components/concepts/CloudGraphDrawer";
 import { CloudConceptEditorDrawer } from "@/components/concepts/CloudConceptEditorDrawer";
+import { CloudRelationshipEditorDrawer } from "@/components/relationships/CloudRelationshipEditorDrawer";
 
 type WorkspaceMode =
   | "all"
@@ -71,7 +72,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.7C2";
+const APP_VERSION = "Alpha 3.7C3";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -318,6 +319,7 @@ const [graphRevision, setGraphRevision] = useState(0);
   const [isGraphMigrationOpen, setIsGraphMigrationOpen] = useState(false);
   const [isCloudGraphOpen, setIsCloudGraphOpen] = useState(false);
   const [isCloudConceptEditorOpen, setIsCloudConceptEditorOpen, ] = useState(false);
+  const [isCloudRelationshipEditorOpen, setIsCloudRelationshipEditorOpen, ] = useState(false);
 
 useEffect(() => {
   setIsHydrated(true);
@@ -1096,6 +1098,8 @@ if (!isHydrated) {
       onOpenGraphMigration={() => setIsGraphMigrationOpen(true)}
       onOpenCloudGraph={() => setIsCloudGraphOpen(true)}
       onOpenCloudConceptEditor={() => setIsCloudConceptEditorOpen(true)}
+      onOpenCloudRelationshipEditor={() => setIsCloudRelationshipEditorOpen(true)
+}
     />
 
     <section className="flex-1">
@@ -1399,7 +1403,7 @@ if (!isHydrated) {
           </section>
 
           <footer className="mt-10 border-t border-neutral-800 pt-6 text-sm text-neutral-500">
-            YERRR Studio {APP_VERSION} · Cloud Concept Editor
+            YERRR Studio {APP_VERSION} · Cloud Relationship Editor
           </footer>
         </div>
       </section>
@@ -1779,6 +1783,23 @@ if (!isHydrated) {
   entries={entries}
   onMerged={() => {
     setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<CloudRelationshipEditorDrawer
+  isOpen={isCloudRelationshipEditorOpen}
+  onClose={() =>
+    setIsCloudRelationshipEditorOpen(false)
+  }
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsCloudRelationshipEditorOpen(false);
+    setSelectedEntry(entry);
+  }}
+  onGraphChanged={() => {
+    setGraphRevision(
+      (currentRevision) => currentRevision + 1
+    );
   }}
 />
 
