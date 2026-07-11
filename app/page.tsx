@@ -1728,6 +1728,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   isOpen={isConceptsOpen}
   onClose={() => setIsConceptsOpen(false)}
   entries={entries}
+  onOpenEntry={(entry) => setSelectedEntry(entry)}
 />
 
       {isCaptureOpen && (

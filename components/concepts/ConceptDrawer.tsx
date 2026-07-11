@@ -17,6 +17,7 @@ type ConceptDrawerProps = {
   isOpen: boolean;
   onClose: () => void;
   entries?: Entry[];
+  onOpenEntry?: (entry: Entry) => void;
 };
 
 type ConceptFormState = {
@@ -26,7 +27,7 @@ type ConceptFormState = {
   color: ConceptColor;
 };
 
-type DrawerTab = "concepts" | "assign";
+type DrawerTab = "concepts" | "assign" | "browse";
 
 const CONCEPT_STORAGE_KEY = "yerrr-studio-concepts-alpha-3";
 const ASSIGNMENT_STORAGE_KEY = "yerrr-studio-concept-assignments-alpha-3";
@@ -114,10 +115,47 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function escapeCsvValue(value: unknown) {
+  const stringValue = String(value ?? "");
+  const escapedValue = stringValue.replace(/"/g, '""');
+
+  return `"${escapedValue}"`;
+}
+
+function entriesToConceptCsv(entries: Entry[], concept: Concept) {
+  const headers = [
+    "concept",
+    "conceptSlug",
+    "entryId",
+    "word",
+    "slug",
+    "status",
+    "meaningCount",
+  ];
+
+  const rows = entries.map((entry) => {
+    return [
+      concept.name,
+      concept.slug,
+      entry.id,
+      entry.word,
+      entry.slug,
+      entry.status,
+      entry.meanings.length,
+    ].map(escapeCsvValue);
+  });
+
+  return [
+    headers.map(escapeCsvValue).join(","),
+    ...rows.map((row) => row.join(",")),
+  ].join("\n");
+}
+
 export function ConceptDrawer({
   isOpen,
   onClose,
   entries = [],
+  onOpenEntry,
 }: ConceptDrawerProps) {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<DrawerTab>("concepts");
@@ -127,10 +165,13 @@ export function ConceptDrawer({
     null
   );
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [browseConceptId, setBrowseConceptId] = useState<string | null>(null);
   const [draftConceptIds, setDraftConceptIds] = useState<string[]>([]);
   const [form, setForm] = useState<ConceptFormState>(EMPTY_FORM);
   const [conceptSearch, setConceptSearch] = useState("");
   const [entrySearch, setEntrySearch] = useState("");
+  const [browseConceptSearch, setBrowseConceptSearch] = useState("");
+  const [linkedEntrySearch, setLinkedEntrySearch] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -191,6 +232,10 @@ export function ConceptDrawer({
     return entries.find((entry) => entry.id === selectedEntryId) ?? null;
   }, [entries, selectedEntryId]);
 
+  const browseConcept = useMemo(() => {
+    return concepts.find((concept) => concept.id === browseConceptId) ?? null;
+  }, [concepts, browseConceptId]);
+
   const selectedEntryAssignment = useMemo(() => {
     if (!selectedEntryId) return null;
 
@@ -241,11 +286,71 @@ export function ConceptDrawer({
     return usageMap;
   }, [assignments]);
 
+  const filteredBrowseConcepts = useMemo(() => {
+    const query = browseConceptSearch.trim().toLowerCase();
+
+    const sortedConcepts = [...concepts].sort((a, b) => {
+      const bCount = conceptUsageCounts.get(b.id) ?? 0;
+      const aCount = conceptUsageCounts.get(a.id) ?? 0;
+
+      return bCount - aCount;
+    });
+
+    if (!query) return sortedConcepts;
+
+    return sortedConcepts.filter((concept) => {
+      return (
+        concept.name.toLowerCase().includes(query) ||
+        concept.slug.toLowerCase().includes(query) ||
+        concept.description.toLowerCase().includes(query) ||
+        concept.category.toLowerCase().includes(query)
+      );
+    });
+  }, [concepts, browseConceptSearch, conceptUsageCounts]);
+
   const selectedEntryConcepts = useMemo(() => {
-    return concepts.filter((concept) =>
-      draftConceptIds.includes(concept.id)
-    );
+    return concepts.filter((concept) => draftConceptIds.includes(concept.id));
   }, [concepts, draftConceptIds]);
+
+  const linkedEntriesForBrowseConcept = useMemo(() => {
+    if (!browseConcept) return [];
+
+    const linkedEntryIds = new Set(
+      assignments
+        .filter((assignment) => assignment.conceptIds.includes(browseConcept.id))
+        .map((assignment) => assignment.entryId)
+    );
+
+    return entries.filter((entry) => linkedEntryIds.has(entry.id));
+  }, [assignments, browseConcept, entries]);
+
+  const filteredLinkedEntries = useMemo(() => {
+    const query = linkedEntrySearch.trim().toLowerCase();
+
+    if (!query) return linkedEntriesForBrowseConcept;
+
+    return linkedEntriesForBrowseConcept.filter((entry) => {
+      return (
+        entry.word.toLowerCase().includes(query) ||
+        entry.slug.toLowerCase().includes(query) ||
+        entry.status.toLowerCase().includes(query)
+      );
+    });
+  }, [linkedEntriesForBrowseConcept, linkedEntrySearch]);
+
+  const graphEntryConceptMap = useMemo(() => {
+    const map = new Map<string, Concept[]>();
+
+    assignments.forEach((assignment) => {
+      const assignedConcepts = concepts.filter((concept) =>
+        assignment.conceptIds.includes(concept.id)
+      );
+
+      map.set(assignment.entryId, assignedConcepts);
+    });
+
+    return map;
+  }, [assignments, concepts]);
 
   const conceptStats = useMemo(() => {
     const categoryCounts = new Map<ConceptCategory, number>();
@@ -270,14 +375,19 @@ export function ConceptDrawer({
       0
     );
 
+    const unusedConcepts = concepts.filter(
+      (concept) => (conceptUsageCounts.get(concept.id) ?? 0) === 0
+    ).length;
+
     return {
       total: concepts.length,
       categoriesUsed: categoryCounts.size,
       topCategory: topCategory?.[0] ?? "None",
       assignedEntries,
       totalLinks,
+      unusedConcepts,
     };
-  }, [concepts, assignments]);
+  }, [concepts, assignments, conceptUsageCounts]);
 
   function resetForm() {
     setSelectedConceptId(null);
@@ -356,6 +466,7 @@ export function ConceptDrawer({
 
     setConcepts((currentConcepts) => [newConcept, ...currentConcepts]);
     setSelectedConceptId(newConcept.id);
+    setBrowseConceptId(newConcept.id);
     setMessage("Concept created.");
   }
 
@@ -383,6 +494,10 @@ export function ConceptDrawer({
         }))
         .filter((assignment) => assignment.conceptIds.length > 0)
     );
+
+    if (browseConceptId === selectedConcept.id) {
+      setBrowseConceptId(null);
+    }
 
     setDraftConceptIds((currentIds) =>
       currentIds.filter((conceptId) => conceptId !== selectedConcept.id)
@@ -461,10 +576,27 @@ export function ConceptDrawer({
     setMessage(`Concepts cleared for "${selectedEntry.word}".`);
   }
 
+  function browseConceptFromLibrary(concept: Concept) {
+    setBrowseConceptId(concept.id);
+    setLinkedEntrySearch("");
+    setActiveTab("browse");
+    setMessage("");
+  }
+
+  function openEntryFromGraph(entry: Entry) {
+    if (onOpenEntry) {
+      onOpenEntry(entry);
+      onClose();
+      return;
+    }
+
+    setMessage(`Entry selected: ${entry.word}`);
+  }
+
   function exportConceptsJson() {
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.1",
+      version: "Alpha 3.2",
       exportType: "concepts",
       exportedAt: new Date().toISOString(),
       counts: {
@@ -485,7 +617,7 @@ export function ConceptDrawer({
   function exportGraphJson() {
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.1",
+      version: "Alpha 3.2",
       exportType: "local_knowledge_graph",
       exportedAt: new Date().toISOString(),
       counts: {
@@ -493,6 +625,7 @@ export function ConceptDrawer({
         assignments: assignments.length,
         assignedEntries: conceptStats.assignedEntries,
         totalLinks: conceptStats.totalLinks,
+        unusedConcepts: conceptStats.unusedConcepts,
       },
       concepts,
       assignments,
@@ -507,6 +640,44 @@ export function ConceptDrawer({
     setMessage("Knowledge graph exported.");
   }
 
+  function exportBrowseConceptJson() {
+    if (!browseConcept) return;
+
+    const backup = {
+      app: "YERRR Studio",
+      version: "Alpha 3.2",
+      exportType: "concept_linked_entries",
+      exportedAt: new Date().toISOString(),
+      concept: browseConcept,
+      counts: {
+        linkedEntries: linkedEntriesForBrowseConcept.length,
+      },
+      entries: linkedEntriesForBrowseConcept,
+    };
+
+    downloadTextFile(
+      `yerrr-concept-${browseConcept.slug}-entries-${getDateSlug()}.json`,
+      JSON.stringify(backup, null, 2),
+      "application/json"
+    );
+
+    setMessage(`Linked entries exported for "${browseConcept.name}".`);
+  }
+
+  function exportBrowseConceptCsv() {
+    if (!browseConcept) return;
+
+    const csv = entriesToConceptCsv(linkedEntriesForBrowseConcept, browseConcept);
+
+    downloadTextFile(
+      `yerrr-concept-${browseConcept.slug}-entries-${getDateSlug()}.csv`,
+      csv,
+      "text/csv"
+    );
+
+    setMessage(`Linked entries CSV exported for "${browseConcept.name}".`);
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -517,18 +688,18 @@ export function ConceptDrawer({
         className="absolute inset-0 h-full w-full cursor-default"
       />
 
-      <aside className="absolute bottom-0 right-0 max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border-t border-neutral-800 bg-neutral-950 p-5 shadow-2xl md:bottom-auto md:top-0 md:h-full md:max-h-none md:max-w-5xl md:rounded-none md:rounded-l-3xl md:border-l md:border-t-0 md:p-6">
+      <aside className="absolute bottom-0 right-0 max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border-t border-neutral-800 bg-neutral-950 p-5 shadow-2xl md:bottom-auto md:top-0 md:h-full md:max-h-none md:max-w-6xl md:rounded-none md:rounded-l-3xl md:border-l md:border-t-0 md:p-6">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.25em] text-yellow-400">
               Knowledge Graph
             </p>
             <h2 className="mt-2 text-2xl font-black text-white">
-              Concept Editor
+              Concept Browser
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">
-              Create high-level ideas and connect slang entries to them. This
-              builds the local foundation for the YERRR Knowledge Graph.
+              Create concepts, assign them to slang entries, and browse the
+              local Knowledge Graph by concept.
             </p>
           </div>
 
@@ -540,7 +711,7 @@ export function ConceptDrawer({
           </button>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-6">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
               Concepts
@@ -579,6 +750,15 @@ export function ConceptDrawer({
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+              Unused
+            </p>
+            <p className="mt-2 text-2xl font-black text-white">
+              {conceptStats.unusedConcepts}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
               Top Type
             </p>
             <p className="mt-2 truncate text-lg font-black text-white">
@@ -587,10 +767,10 @@ export function ConceptDrawer({
           </div>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-neutral-800 bg-neutral-900 p-2">
+        <div className="mb-5 grid grid-cols-3 gap-2 rounded-2xl border border-neutral-800 bg-neutral-900 p-2">
           <button
             onClick={() => setActiveTab("concepts")}
-            className={`rounded-xl px-4 py-3 text-sm font-black ${
+            className={`rounded-xl px-3 py-3 text-xs font-black sm:text-sm ${
               activeTab === "concepts"
                 ? "bg-yellow-400 text-black"
                 : "text-neutral-400 hover:text-white"
@@ -601,13 +781,24 @@ export function ConceptDrawer({
 
           <button
             onClick={() => setActiveTab("assign")}
-            className={`rounded-xl px-4 py-3 text-sm font-black ${
+            className={`rounded-xl px-3 py-3 text-xs font-black sm:text-sm ${
               activeTab === "assign"
                 ? "bg-yellow-400 text-black"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
             Assign to Entries
+          </button>
+
+          <button
+            onClick={() => setActiveTab("browse")}
+            className={`rounded-xl px-3 py-3 text-xs font-black sm:text-sm ${
+              activeTab === "browse"
+                ? "bg-yellow-400 text-black"
+                : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            Browse Graph
           </button>
         </div>
 
@@ -624,7 +815,7 @@ export function ConceptDrawer({
                 <div>
                   <h3 className="font-black text-white">Concept Library</h3>
                   <p className="mt-1 text-sm text-neutral-500">
-                    Search and select concepts.
+                    Search, select, browse, and edit concepts.
                   </p>
                 </div>
 
@@ -656,41 +847,52 @@ export function ConceptDrawer({
                     const usageCount = conceptUsageCounts.get(concept.id) ?? 0;
 
                     return (
-                      <button
+                      <div
                         key={concept.id}
-                        type="button"
-                        onClick={() => editConcept(concept)}
-                        className={`w-full rounded-2xl border p-4 text-left transition ${
+                        className={`rounded-2xl border p-4 transition ${
                           isSelected
                             ? "border-yellow-400 bg-yellow-400/10"
                             : "border-neutral-800 bg-neutral-950 hover:border-neutral-700"
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate font-black text-white">
-                              {concept.name}
-                            </p>
-                            <p className="mt-1 text-xs text-neutral-500">
-                              /{concept.slug} · {usageCount} linked
-                            </p>
+                        <button
+                          type="button"
+                          onClick={() => editConcept(concept)}
+                          className="w-full text-left"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-black text-white">
+                                {concept.name}
+                              </p>
+                              <p className="mt-1 text-xs text-neutral-500">
+                                /{concept.slug} · {usageCount} linked
+                              </p>
+                            </div>
+
+                            <span
+                              className={`shrink-0 rounded-full border px-2 py-1 text-xs font-bold ${getColorClasses(
+                                concept.color
+                              )}`}
+                            >
+                              {concept.category}
+                            </span>
                           </div>
 
-                          <span
-                            className={`shrink-0 rounded-full border px-2 py-1 text-xs font-bold ${getColorClasses(
-                              concept.color
-                            )}`}
-                          >
-                            {concept.category}
-                          </span>
-                        </div>
+                          {concept.description && (
+                            <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-400">
+                              {concept.description}
+                            </p>
+                          )}
+                        </button>
 
-                        {concept.description && (
-                          <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-400">
-                            {concept.description}
-                          </p>
-                        )}
-                      </button>
+                        <button
+                          onClick={() => browseConceptFromLibrary(concept)}
+                          className="mt-3 rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-300"
+                        >
+                          Browse Linked Entries
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -703,7 +905,8 @@ export function ConceptDrawer({
                   {selectedConcept ? "Edit Concept" : "Create Concept"}
                 </h3>
                 <p className="mt-1 text-sm text-neutral-500">
-                  These concepts can now be assigned to slang entries.
+                  Concepts can be assigned to slang entries and browsed as a
+                  graph.
                 </p>
               </div>
 
@@ -856,7 +1059,7 @@ export function ConceptDrawer({
               </div>
             </section>
           </div>
-        ) : (
+        ) : activeTab === "assign" ? (
           <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
             <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
               <div className="mb-4">
@@ -1055,14 +1258,258 @@ export function ConceptDrawer({
               )}
             </section>
           </div>
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-[0.9fr_1.4fr]">
+            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+              <div className="mb-4">
+                <h3 className="font-black text-white">Browse by Concept</h3>
+                <p className="mt-1 text-sm text-neutral-500">
+                  Pick a concept to reveal every linked slang entry.
+                </p>
+              </div>
+
+              <input
+                value={browseConceptSearch}
+                onChange={(event) => setBrowseConceptSearch(event.target.value)}
+                placeholder="Search concepts..."
+                className="mb-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
+              />
+
+              {concepts.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
+                  Create concepts first, then assign entries to browse the
+                  graph.
+                </div>
+              ) : filteredBrowseConcepts.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
+                  No concepts match your search.
+                </div>
+              ) : (
+                <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+                  {filteredBrowseConcepts.map((concept) => {
+                    const isSelected = browseConceptId === concept.id;
+                    const usageCount = conceptUsageCounts.get(concept.id) ?? 0;
+
+                    return (
+                      <button
+                        key={concept.id}
+                        type="button"
+                        onClick={() => {
+                          setBrowseConceptId(concept.id);
+                          setLinkedEntrySearch("");
+                          setMessage("");
+                        }}
+                        className={`w-full rounded-2xl border p-4 text-left transition ${
+                          isSelected
+                            ? "border-yellow-400 bg-yellow-400/10"
+                            : "border-neutral-800 bg-neutral-950 hover:border-neutral-700"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-black text-white">
+                              {concept.name}
+                            </p>
+                            <p className="mt-1 text-xs text-neutral-500">
+                              /{concept.slug}
+                            </p>
+                          </div>
+
+                          <span className="shrink-0 rounded-full bg-neutral-800 px-2 py-1 text-xs font-bold text-neutral-300">
+                            {usageCount} linked
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <span
+                            className={`rounded-full border px-2 py-1 text-xs font-bold ${getColorClasses(
+                              concept.color
+                            )}`}
+                          >
+                            {concept.category}
+                          </span>
+
+                          {usageCount === 0 && (
+                            <span className="text-xs font-bold text-neutral-600">
+                              Unused
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+              {browseConcept ? (
+                <>
+                  <div className="mb-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                          Selected Concept
+                        </p>
+                        <h3 className="mt-2 text-2xl font-black text-white">
+                          {browseConcept.name}
+                        </h3>
+                        <p className="mt-1 text-sm text-neutral-500">
+                          /{browseConcept.slug} ·{" "}
+                          {linkedEntriesForBrowseConcept.length} linked entries
+                        </p>
+                      </div>
+
+                      <span
+                        className={`w-fit rounded-full border px-3 py-1 text-xs font-bold ${getColorClasses(
+                          browseConcept.color
+                        )}`}
+                      >
+                        {browseConcept.category}
+                      </span>
+                    </div>
+
+                    {browseConcept.description && (
+                      <p className="mt-4 text-sm leading-6 text-neutral-400">
+                        {browseConcept.description}
+                      </p>
+                    )}
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <button
+                        onClick={exportBrowseConceptJson}
+                        disabled={linkedEntriesForBrowseConcept.length === 0}
+                        className="rounded-xl bg-yellow-400 px-4 py-3 text-xs font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Export JSON
+                      </button>
+
+                      <button
+                        onClick={exportBrowseConceptCsv}
+                        disabled={linkedEntriesForBrowseConcept.length === 0}
+                        className="rounded-xl bg-neutral-800 px-4 py-3 text-xs font-black text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Export CSV
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setSelectedConceptId(browseConcept.id);
+                          editConcept(browseConcept);
+                          setActiveTab("concepts");
+                        }}
+                        className="rounded-xl bg-neutral-800 px-4 py-3 text-xs font-black text-white hover:bg-neutral-700"
+                      >
+                        Edit Concept
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="font-black text-white">Linked Entries</h3>
+                      <p className="mt-1 text-sm text-neutral-500">
+                        Showing {filteredLinkedEntries.length} of{" "}
+                        {linkedEntriesForBrowseConcept.length}.
+                      </p>
+                    </div>
+
+                    <input
+                      value={linkedEntrySearch}
+                      onChange={(event) =>
+                        setLinkedEntrySearch(event.target.value)
+                      }
+                      placeholder="Search linked entries..."
+                      className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400 md:max-w-xs"
+                    />
+                  </div>
+
+                  {linkedEntriesForBrowseConcept.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
+                      No entries are linked to this concept yet. Use Assign to
+                      Entries to connect slang to this concept.
+                    </div>
+                  ) : filteredLinkedEntries.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
+                      No linked entries match your search.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredLinkedEntries.map((entry) => {
+                        const entryConcepts =
+                          graphEntryConceptMap.get(entry.id) ?? [];
+
+                        return (
+                          <div
+                            key={entry.id}
+                            className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                          >
+                            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                              <div className="min-w-0">
+                                <p className="truncate text-lg font-black text-white">
+                                  {entry.word}
+                                </p>
+                                <p className="mt-1 text-xs text-neutral-500">
+                                  /{entry.slug} · {entry.status} ·{" "}
+                                  {entry.meanings.length} meaning
+                                  {entry.meanings.length === 1 ? "" : "s"}
+                                </p>
+                              </div>
+
+                              <button
+                                onClick={() => openEntryFromGraph(entry)}
+                                className="rounded-xl bg-yellow-400 px-4 py-2 text-xs font-black text-black hover:bg-yellow-300"
+                              >
+                                Open Entry
+                              </button>
+                            </div>
+
+                            {entry.meanings[0]?.definition && (
+                              <p className="mt-3 text-sm leading-6 text-neutral-400">
+                                {entry.meanings[0].definition}
+                              </p>
+                            )}
+
+                            {entryConcepts.length > 0 && (
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                {entryConcepts.map((concept) => (
+                                  <button
+                                    key={concept.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setBrowseConceptId(concept.id);
+                                      setLinkedEntrySearch("");
+                                    }}
+                                    className={`rounded-full border px-3 py-1 text-xs font-bold ${getColorClasses(
+                                      concept.color
+                                    )}`}
+                                  >
+                                    {concept.name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="rounded-xl border border-dashed border-neutral-700 p-6 text-sm text-neutral-500">
+                  Select a concept from the left to browse its linked entries.
+                </div>
+              )}
+            </section>
+          </div>
         )}
 
         <div className="mt-6 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-          <p className="font-black text-yellow-100">Alpha 3.1 note</p>
+          <p className="font-black text-yellow-100">Alpha 3.2 note</p>
           <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-            Concept assignments are stored locally for now. The next step can
-            add Browse Concepts, where clicking a concept shows every linked
-            slang entry.
+            Browse Graph lets you move from concept to linked entries. The next
+            step can add deeper graph stats: unused concepts, entries with no
+            concepts, most connected entries, and graph completion.
           </p>
         </div>
       </aside>
