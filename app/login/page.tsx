@@ -27,7 +27,7 @@ import { CloudGraphDrawer } from "@/components/concepts/CloudGraphDrawer";
 import { CloudConceptEditorDrawer } from "@/components/concepts/CloudConceptEditorDrawer";
 import { CloudRelationshipEditorDrawer } from "@/components/relationships/CloudRelationshipEditorDrawer";
 import { AIAssistantDrawer } from "@/components/ai/AIAssistantDrawer";
-import { createClient } from "@/utils/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 
 type WorkspaceMode =
   | "all"

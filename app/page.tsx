@@ -29,6 +29,7 @@ import { CloudRelationshipEditorDrawer } from "@/components/relationships/CloudR
 import { AIAssistantDrawer } from "@/components/ai/AIAssistantDrawer";
 import { AIEditorialHandoffPanel } from "@/components/ai/AIEditorialHandoffPanel";
 import { AIMissingFieldsPanel } from "@/components/ai/AIMissingFieldsPanel";
+import { AISemanticDuplicatePanel } from "@/components/ai/AISemanticDuplicatePanel";
 import type { AIEditorialHandoff } from "@/types/aiEditorial";
 import { createClient } from "@/lib/supabase/client";
 
@@ -84,7 +85,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.6";
+const APP_VERSION = "Alpha 5.7";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -345,6 +346,11 @@ export default function Home() {
   const [isAIAssistantOpen, setIsAIAssistantOpen] =
     useState(false);
     
+    const [
+  isAISemanticDuplicatesOpen,
+  setIsAISemanticDuplicatesOpen,
+] = useState(false);
+
 const [
   isAIMissingFieldsOpen,
   setIsAIMissingFieldsOpen,
@@ -1189,7 +1195,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       : workspaceMode === "publish"
       ? "Focus only on verified entries that are ready to publish."
       : workspaceMode === "duplicates"
-      ? "Find possible duplicate entries based on word, slug, and alternate spellings."
+? "Find exact spelling matches and use AI to review possible semantic duplicates."
       : workspaceMode === "trash"
       ? "Restore entries that were deleted by mistake."
       : "Search, open, edit, autosave, verify, publish, and delete captured slang.";
@@ -2230,6 +2236,34 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
           </div>
         </div>
       )}
+
+      {workspaceMode === "duplicates" &&
+  !isAISemanticDuplicatesOpen && (
+    <button
+      type="button"
+      onClick={() =>
+        setIsAISemanticDuplicatesOpen(
+          true,
+        )
+      }
+      className="fixed bottom-24 right-4 z-[65] rounded-2xl border border-cyan-200/30 bg-cyan-300 px-4 py-3 text-sm font-black text-black shadow-2xl transition hover:scale-[1.02] hover:bg-cyan-200 md:bottom-6 md:right-6"
+    >
+      🧠 AI duplicate review
+    </button>
+  )}
+
+{isAISemanticDuplicatesOpen && (
+  <AISemanticDuplicatePanel
+    entries={entries}
+    onClose={() =>
+      setIsAISemanticDuplicatesOpen(false)
+    }
+    onOpenEntry={(entry) => {
+      setIsAISemanticDuplicatesOpen(false);
+      setSelectedEntry(entry);
+    }}
+  />
+)}
     </main>
   );
 }
