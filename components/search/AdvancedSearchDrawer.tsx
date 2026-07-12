@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { Entry } from "@/types/entry";
 import { getSupabaseSearchClient } from "@/lib/supabaseSearchClient";
@@ -112,6 +118,50 @@ const DEFAULT_PART_OF_SPEECH_OPTIONS = [
   "Determiner",
   "Other",
 ];
+
+const RECENT_SEARCH_STORAGE_KEY =
+  "yerrr-studio-recent-searches";
+
+const SEARCH_PAGE_SIZE = 24;
+const MAX_RECENT_SEARCHES = 8;
+
+function isInteractiveTarget(
+  target: EventTarget | null,
+) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.isContentEditable ||
+    ["BUTTON", "A", "SELECT", "TEXTAREA"].includes(
+      target.tagName,
+    )
+  );
+}
+
+function mergeRecentSearch(
+  currentSearches: string[],
+  nextQuery: string,
+) {
+  const cleanQuery = nextQuery.trim();
+
+  if (!cleanQuery) {
+    return currentSearches;
+  }
+
+  const normalizedQuery =
+    normalizeSearchText(cleanQuery);
+
+  return [
+    cleanQuery,
+    ...currentSearches.filter(
+      (search) =>
+        normalizeSearchText(search) !==
+        normalizedQuery,
+    ),
+  ].slice(0, MAX_RECENT_SEARCHES);
+}
 
 function normalizeFieldKey(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -757,7 +807,30 @@ export function AdvancedSearchDrawer({
 
   const [serverError, setServerError] = useState("");
 
+  const [searchLatencyMs, setSearchLatencyMs] =
+    useState<number | null>(null);
+
+  const [visibleResultCount, setVisibleResultCount] =
+    useState(SEARCH_PAGE_SIZE);
+
+  const [activeResultIndex, setActiveResultIndex] =
+    useState(-1);
+
+  const [recentSearches, setRecentSearches] =
+    useState<string[]>([]);
+
+  const [showFilters, setShowFilters] =
+    useState(true);
+
   const requestIdRef = useRef(0);
+  const searchInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const resultCardRefs = useRef<
+    Array<HTMLElement | null>
+  >([]);
+
+  const deferredQuery = useDeferredValue(query);
 
   const documents = useMemo(() => entries.map(createSearchDocument), [entries]);
 
@@ -782,7 +855,15 @@ export function AdvancedSearchDrawer({
       : DEFAULT_PART_OF_SPEECH_OPTIONS;
   }, [documents]);
 
-  const normalizedQuery = useMemo(() => normalizeSearchText(query), [query]);
+  const normalizedImmediateQuery = useMemo(
+    () => normalizeSearchText(query),
+    [query],
+  );
+
+  const normalizedQuery = useMemo(
+    () => normalizeSearchText(deferredQuery),
+    [deferredQuery],
+  );
 
   const tokens = useMemo(
     () =>
@@ -797,11 +878,12 @@ export function AdvancedSearchDrawer({
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
 
-    if (!isOpen || !normalizedQuery) {
+    if (!isOpen || !normalizedImmediateQuery) {
       setServerRows([]);
       setSearchSource("local");
       setIsServerSearching(false);
       setServerError("");
+      setSearchLatencyMs(null);
       return;
     }
 
@@ -812,6 +894,7 @@ export function AdvancedSearchDrawer({
       setSearchSource("local");
       setIsServerSearching(false);
       setServerError("");
+      setSearchLatencyMs(null);
       return;
     }
 
@@ -819,8 +902,11 @@ export function AdvancedSearchDrawer({
     setSearchSource("supabase");
     setIsServerSearching(true);
     setServerError("");
+    setSearchLatencyMs(null);
 
     const timeoutId = window.setTimeout(async () => {
+      const startedAt = performance.now();
+
       try {
         const supabase = getSupabaseSearchClient();
 
@@ -848,12 +934,18 @@ export function AdvancedSearchDrawer({
           setServerRows([]);
           setSearchSource("fallback");
           setServerError("");
+          setSearchLatencyMs(
+            Math.round(performance.now() - startedAt),
+          );
           return;
         }
 
         setServerRows(rows);
         setSearchSource("supabase");
         setServerError("");
+        setSearchLatencyMs(
+          Math.round(performance.now() - startedAt),
+        );
       } catch (error) {
         if (requestIdRef.current !== requestId) {
           return;
@@ -867,6 +959,9 @@ export function AdvancedSearchDrawer({
         setServerRows([]);
         setSearchSource("fallback");
         setServerError(message);
+        setSearchLatencyMs(
+          Math.round(performance.now() - startedAt),
+        );
       } finally {
         if (requestIdRef.current === requestId) {
           setIsServerSearching(false);
@@ -877,7 +972,12 @@ export function AdvancedSearchDrawer({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [isOpen, matchMode, normalizedQuery, query]);
+  }, [
+    isOpen,
+    matchMode,
+    normalizedImmediateQuery,
+    query,
+  ]);
 
   const serverMetadataById = useMemo(() => {
     return new Map(
@@ -1046,6 +1146,19 @@ export function AdvancedSearchDrawer({
     tokens,
   ]);
 
+  const visibleResults = useMemo(
+    () => results.slice(0, visibleResultCount),
+    [results, visibleResultCount],
+  );
+
+  const hasMoreResults =
+    visibleResults.length < results.length;
+
+  const remainingResultCount = Math.max(
+    results.length - visibleResults.length,
+    0,
+  );
+
   const suggestedQuery = useMemo(() => {
     if (searchSource !== "supabase" || !normalizedQuery) {
       return "";
@@ -1088,6 +1201,18 @@ export function AdvancedSearchDrawer({
     };
   }, [results]);
 
+  const activeFilterCount = [
+    scope !== "all",
+    matchMode !== "all",
+    statusFilter !== "all",
+    partOfSpeechFilter !== "all",
+    pronunciationFilter !== "all",
+    sortMode !== "relevance",
+  ].filter(Boolean).length;
+
+  const isUpdatingResults =
+    query !== deferredQuery || isServerSearching;
+
   const hasActiveFilters =
     query.trim().length > 0 ||
     scope !== "all" ||
@@ -1096,6 +1221,224 @@ export function AdvancedSearchDrawer({
     partOfSpeechFilter !== "all" ||
     pronunciationFilter !== "all" ||
     sortMode !== "relevance";
+
+  useEffect(() => {
+    try {
+      const storedSearches =
+        window.localStorage.getItem(
+          RECENT_SEARCH_STORAGE_KEY,
+        );
+
+      if (!storedSearches) return;
+
+      const parsedSearches = JSON.parse(
+        storedSearches,
+      );
+
+      if (Array.isArray(parsedSearches)) {
+        setRecentSearches(
+          parsedSearches
+            .filter(
+              (value): value is string =>
+                typeof value === "string",
+            )
+            .slice(0, MAX_RECENT_SEARCHES),
+        );
+      }
+    } catch {
+      setRecentSearches([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow =
+      document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(
+      () => {
+        searchInputRef.current?.focus();
+      },
+    );
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow =
+        previousOverflow;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    setVisibleResultCount(SEARCH_PAGE_SIZE);
+    setActiveResultIndex(-1);
+    resultCardRefs.current = [];
+  }, [
+    query,
+    scope,
+    matchMode,
+    statusFilter,
+    partOfSpeechFilter,
+    pronunciationFilter,
+    sortMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !query.trim() ||
+      isUpdatingResults ||
+      results.length === 0
+    ) {
+      return;
+    }
+
+    const historyTimer = window.setTimeout(() => {
+      setRecentSearches((currentSearches) => {
+        const nextSearches = mergeRecentSearch(
+          currentSearches,
+          query,
+        );
+
+        try {
+          window.localStorage.setItem(
+            RECENT_SEARCH_STORAGE_KEY,
+            JSON.stringify(nextSearches),
+          );
+        } catch {
+          // Search still works when browser storage is unavailable.
+        }
+
+        return nextSearches;
+      });
+    }, 700);
+
+    return () => {
+      window.clearTimeout(historyTimer);
+    };
+  }, [
+    isOpen,
+    isUpdatingResults,
+    query,
+    results.length,
+  ]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function focusResult(index: number) {
+      window.requestAnimationFrame(() => {
+        resultCardRefs.current[index]?.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth",
+        });
+      });
+    }
+
+    function handleKeyboardShortcut(
+      event: KeyboardEvent,
+    ) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (
+        event.key === "/" &&
+        !isInteractiveTarget(event.target) &&
+        !(event.target instanceof HTMLInputElement)
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      const targetIsSelect =
+        event.target instanceof HTMLSelectElement;
+
+      const targetIsButton =
+        event.target instanceof HTMLButtonElement;
+
+      if (targetIsSelect || targetIsButton) {
+        return;
+      }
+
+      if (
+        event.key === "ArrowDown" &&
+        visibleResults.length > 0
+      ) {
+        event.preventDefault();
+
+        setActiveResultIndex((currentIndex) => {
+          const nextIndex = Math.min(
+            currentIndex + 1,
+            visibleResults.length - 1,
+          );
+
+          focusResult(nextIndex);
+          return nextIndex;
+        });
+
+        return;
+      }
+
+      if (
+        event.key === "ArrowUp" &&
+        visibleResults.length > 0
+      ) {
+        event.preventDefault();
+
+        setActiveResultIndex((currentIndex) => {
+          const nextIndex =
+            currentIndex <= 0
+              ? 0
+              : currentIndex - 1;
+
+          focusResult(nextIndex);
+          return nextIndex;
+        });
+
+        return;
+      }
+
+      if (
+        event.key === "Enter" &&
+        activeResultIndex >= 0
+      ) {
+        const activeResult =
+          visibleResults[activeResultIndex];
+
+        if (!activeResult || !onOpenEntry) {
+          return;
+        }
+
+        event.preventDefault();
+        onClose();
+        onOpenEntry(activeResult.entry);
+      }
+    }
+
+    window.addEventListener(
+      "keydown",
+      handleKeyboardShortcut,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleKeyboardShortcut,
+      );
+    };
+  }, [
+    activeResultIndex,
+    isOpen,
+    onClose,
+    onOpenEntry,
+    visibleResults,
+  ]);
 
   function clearSearch() {
     requestIdRef.current += 1;
@@ -1110,6 +1453,42 @@ export function AdvancedSearchDrawer({
     setSearchSource("local");
     setIsServerSearching(false);
     setServerError("");
+    setSearchLatencyMs(null);
+    setVisibleResultCount(SEARCH_PAGE_SIZE);
+    setActiveResultIndex(-1);
+
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+  }
+
+  function runRecentSearch(recentQuery: string) {
+    setQuery(recentQuery);
+    setActiveResultIndex(-1);
+
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    });
+  }
+
+  function clearRecentSearches() {
+    setRecentSearches([]);
+
+    try {
+      window.localStorage.removeItem(
+        RECENT_SEARCH_STORAGE_KEY,
+      );
+    } catch {
+      // Search still works when browser storage is unavailable.
+    }
+  }
+
+  function loadMoreResults() {
+    setVisibleResultCount(
+      (currentCount) =>
+        currentCount + SEARCH_PAGE_SIZE,
+    );
   }
 
   function openEntry(entry: Entry) {
@@ -1132,25 +1511,40 @@ export function AdvancedSearchDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+      role="presentation"
+    >
       <button
         aria-label="Close advanced search"
         onClick={onClose}
         className="absolute inset-0 h-full w-full cursor-default"
       />
 
-      <aside className="absolute bottom-0 right-0 max-h-[94vh] w-full overflow-y-auto rounded-t-3xl border-t border-neutral-800 bg-neutral-950 p-5 shadow-2xl md:bottom-auto md:top-0 md:h-full md:max-h-none md:max-w-6xl md:rounded-none md:rounded-l-3xl md:border-l md:border-t-0 md:p-6">
-        <div className="mb-6 flex items-start justify-between gap-4">
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="advanced-search-title"
+        aria-describedby="advanced-search-description"
+        className="absolute bottom-0 right-0 max-h-[94vh] w-full overflow-y-auto overscroll-contain rounded-t-3xl border-t border-neutral-800 bg-neutral-950 p-5 shadow-2xl md:bottom-auto md:top-0 md:h-full md:max-h-none md:max-w-6xl md:rounded-none md:rounded-l-3xl md:border-l md:border-t-0 md:p-6"
+      >
+        <div className="sticky top-0 z-20 -mx-5 mb-6 flex items-start justify-between gap-4 border-b border-neutral-800 bg-neutral-950/95 px-5 py-4 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.25em] text-yellow-400">
               Phase 4 Search
             </p>
 
-            <h2 className="mt-2 text-2xl font-black text-white">
+            <h2
+              id="advanced-search-title"
+              className="mt-2 text-2xl font-black text-white"
+            >
               Advanced Lexicon Search
             </h2>
 
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">
+            <p
+              id="advanced-search-description"
+              className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500"
+            >
               Search words, definitions, culture, concepts, and relationships
               with ranked results, typo tolerance, and graph-aware discovery.
             </p>
@@ -1171,14 +1565,48 @@ export function AdvancedSearchDrawer({
                 🔎
               </span>
 
+              <label
+                htmlFor="advanced-search-input"
+                className="sr-only"
+              >
+                Search the YERRR Studio lexicon
+              </label>
+
               <input
+                ref={searchInputRef}
+                id="advanced-search-input"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) =>
+                  setQuery(event.target.value)
+                }
                 placeholder="Search deadass, honesty, bodega culture..."
-                autoFocus
+                autoComplete="off"
+                spellCheck="false"
+                aria-controls="advanced-search-results"
+                aria-activedescendant={
+                  activeResultIndex >= 0
+                    ? `advanced-search-result-${activeResultIndex}`
+                    : undefined
+                }
                 className="w-full rounded-2xl border border-neutral-700 bg-neutral-950 py-4 pl-11 pr-4 text-base font-semibold text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
               />
             </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setShowFilters(
+                  (currentValue) => !currentValue,
+                )
+              }
+              className="rounded-2xl border border-neutral-700 bg-neutral-950 px-5 py-4 text-sm font-black text-white hover:border-yellow-400 hover:text-yellow-300"
+              aria-expanded={showFilters}
+            >
+              {showFilters ? "Hide" : "Show"} Filters
+              {activeFilterCount > 0
+                ? ` · ${activeFilterCount}`
+                : ""}
+            </button>
 
             <button
               onClick={clearSearch}
@@ -1189,7 +1617,46 @@ export function AdvancedSearchDrawer({
             </button>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {!query.trim() &&
+            recentSearches.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-neutral-500">
+                    Recent searches
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={clearRecentSearches}
+                    className="text-xs font-bold text-neutral-500 hover:text-white"
+                  >
+                    Clear history
+                  </button>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {recentSearches.map(
+                    (recentSearch) => (
+                      <button
+                        key={recentSearch}
+                        type="button"
+                        onClick={() =>
+                          runRecentSearch(
+                            recentSearch,
+                          )
+                        }
+                        className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-bold text-neutral-300 hover:border-yellow-400 hover:text-yellow-200"
+                      >
+                        ↻ {recentSearch}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+
+          {showFilters && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <label className="block">
               <span className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">
                 Scope
@@ -1305,9 +1772,13 @@ export function AdvancedSearchDrawer({
                 <option value="status">Status</option>
               </select>
             </label>
-          </div>
+            </div>
+          )}
 
-          <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-neutral-800 bg-neutral-950 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            className="mt-4 flex flex-col gap-2 rounded-2xl border border-neutral-800 bg-neutral-950 p-3 sm:flex-row sm:items-center sm:justify-between"
+            aria-live="polite"
+          >
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`rounded-full border px-3 py-1 text-xs font-black ${getSearchSourceClasses(
@@ -1323,6 +1794,21 @@ export function AdvancedSearchDrawer({
                   Searching Supabase...
                 </span>
               )}
+
+              {!isServerSearching &&
+                searchLatencyMs !== null &&
+                normalizedImmediateQuery && (
+                  <span className="rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-xs font-bold text-neutral-500">
+                    {searchLatencyMs} ms
+                  </span>
+                )}
+
+              {isUpdatingResults &&
+                !isServerSearching && (
+                  <span className="text-xs font-bold text-yellow-200">
+                    Updating results...
+                  </span>
+                )}
             </div>
 
             <p className="text-xs leading-5 text-neutral-500">
@@ -1333,6 +1819,11 @@ export function AdvancedSearchDrawer({
                   : "Type a query to search the lexicon and Knowledge Graph together."}
             </p>
           </div>
+
+          <p className="mt-3 text-xs text-neutral-600">
+            Keyboard: ↑/↓ select · Enter open · / focus
+            search · Esc close
+          </p>
 
           {serverError && (
             <div className="mt-3 rounded-2xl border border-orange-400/20 bg-orange-400/10 p-3 text-xs leading-5 text-orange-100">
@@ -1431,11 +1922,11 @@ export function AdvancedSearchDrawer({
 
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-600">
               {sortMode === "relevance" ? "Ranked" : "Sorted"} ·{" "}
-              {results.length} shown
+              {visibleResults.length} of {results.length} shown
             </p>
           </div>
 
-          {isServerSearching ? (
+          {isUpdatingResults ? (
             <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-8 text-center">
               <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
 
@@ -1458,11 +1949,33 @@ export function AdvancedSearchDrawer({
               </p>
             </div>
           ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {results.map((result) => (
+            <div
+              id="advanced-search-results"
+              role="listbox"
+              aria-label="Advanced search results"
+              className="grid gap-3 lg:grid-cols-2"
+            >
+              {visibleResults.map((result, index) => (
                 <article
+                  ref={(node) => {
+                    resultCardRefs.current[index] =
+                      node;
+                  }}
+                  id={`advanced-search-result-${index}`}
                   key={result.entry.id}
-                  className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 transition hover:border-neutral-700"
+                  role="option"
+                  aria-selected={
+                    activeResultIndex === index
+                  }
+                  tabIndex={-1}
+                  onMouseEnter={() =>
+                    setActiveResultIndex(index)
+                  }
+                  className={`rounded-2xl border bg-neutral-950 p-4 transition ${
+                    activeResultIndex === index
+                      ? "border-yellow-400 shadow-[0_0_0_1px_rgba(250,204,21,0.2)]"
+                      : "border-neutral-800 hover:border-neutral-700"
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -1623,15 +2136,48 @@ export function AdvancedSearchDrawer({
               ))}
             </div>
           )}
+
+          {!isUpdatingResults &&
+            results.length > 0 && (
+              <div className="mt-5 flex flex-col items-center justify-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 p-4 sm:flex-row sm:justify-between">
+                <p className="text-sm text-neutral-500">
+                  Showing{" "}
+                  <span className="font-black text-white">
+                    {visibleResults.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-black text-white">
+                    {results.length}
+                  </span>{" "}
+                  results
+                </p>
+
+                {hasMoreResults && (
+                  <button
+                    type="button"
+                    onClick={loadMoreResults}
+                    className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-black text-white hover:border-yellow-400 hover:text-yellow-200"
+                  >
+                    Load{" "}
+                    {Math.min(
+                      SEARCH_PAGE_SIZE,
+                      remainingResultCount,
+                    )}{" "}
+                    More · {remainingResultCount} remaining
+                  </button>
+                )}
+              </div>
+            )}
         </section>
 
         <div className="mt-6 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-          <p className="font-black text-yellow-100">Alpha 4.4 note</p>
+          <p className="font-black text-yellow-100">Alpha 4.5 note</p>
 
           <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-            Search now combines lexical relevance with Supabase concepts and
-            entry relationships. Concept chips launch graph-only searches, and
-            related-entry chips open connected lexicon records directly.
+            Phase 4 Search is now optimized for daily editorial use with
+            deferred rendering, paged results, recent searches, keyboard
+            navigation, accessible dialog behavior, latency feedback, mobile
+            controls, and automatic local fallback.
           </p>
         </div>
       </aside>

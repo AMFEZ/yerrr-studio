@@ -56,7 +56,7 @@ type NavItem = {
   action?: () => void;
 };
 
-const VERSION_LABEL = "Alpha 4.4";
+const VERSION_LABEL = "Alpha 4.5";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -679,12 +679,13 @@ export function Sidebar(props: SidebarProps) {
 
               <div className="rounded-2xl border border-zinc-200 bg-white p-3">
   <p className="text-sm font-bold text-zinc-900">
-    Current: Graph-Aware Search
+    Phase 4 Search Complete
   </p>
 
   <p className="mt-1 text-xs leading-5 text-zinc-500">
-    Search concepts and relationships alongside ranked
-    lexicon content.
+    Ranked full-text search, typo tolerance, Knowledge Graph
+    discovery, recent searches, keyboard navigation, and
+    mobile optimization.
   </p>
 </div>
 
