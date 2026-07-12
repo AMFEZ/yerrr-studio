@@ -31,6 +31,7 @@ import { AIEditorialHandoffPanel } from "@/components/ai/AIEditorialHandoffPanel
 import { AIMissingFieldsPanel } from "@/components/ai/AIMissingFieldsPanel";
 import { AISemanticDuplicatePanel } from "@/components/ai/AISemanticDuplicatePanel";
 import { AIBatchTriagePanel } from "@/components/ai/AIBatchTriagePanel";
+import { AIRelationshipSuggestionsPanel } from "@/components/ai/AIRelationshipSuggestionsPanel";
 import type { AIEditorialHandoff } from "@/types/aiEditorial";
 import { createClient } from "@/lib/supabase/client";
 
@@ -86,7 +87,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.8";
+const APP_VERSION = "Alpha 5.9";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -355,6 +356,11 @@ export default function Home() {
 const [
   isAIBatchTriageOpen,
   setIsAIBatchTriageOpen,
+] = useState(false);
+
+const [
+  isAIRelationshipSuggestionsOpen,
+  setIsAIRelationshipSuggestionsOpen,
 ] = useState(false);
 
 const [
@@ -1444,6 +1450,22 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
           📋 AI batch triage
         </button>
       )}
+
+{workspaceMode === "all" &&
+  !isAIRelationshipSuggestionsOpen && (
+    <button
+      type="button"
+      onClick={() =>
+        setIsAIRelationshipSuggestionsOpen(
+          true,
+        )
+      }
+      className="w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-black text-black shadow-lg transition hover:bg-emerald-200"
+    >
+      🕸️ AI relationship suggestions
+    </button>
+  )}
+
   </div>
 </div>
 
@@ -2072,6 +2094,33 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     );
   }}
 />
+
+{isAIRelationshipSuggestionsOpen && (
+  <AIRelationshipSuggestionsPanel
+    entries={entries}
+    onClose={() =>
+      setIsAIRelationshipSuggestionsOpen(
+        false,
+      )
+    }
+    onOpenEntry={(entry) => {
+      setIsAIRelationshipSuggestionsOpen(
+        false,
+      );
+
+      setSelectedEntry(entry);
+    }}
+    onOpenRelationshipEditor={() => {
+      setIsAIRelationshipSuggestionsOpen(
+        false,
+      );
+
+      setIsCloudRelationshipEditorOpen(
+        true,
+      );
+    }}
+  />
+)}
 
 <CloudRelationshipEditorDrawer
   isOpen={isCloudRelationshipEditorOpen}

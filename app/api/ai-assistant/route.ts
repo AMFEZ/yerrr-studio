@@ -167,30 +167,44 @@ function cleanContextEntries(
     return [];
   }
 
-  return value
-    .slice(0, MAX_CONTEXT_ENTRIES)
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return null;
-      }
+  const contextEntries: ContextEntry[] = [];
 
-      const record = entry as Record<
-        string,
-        unknown
-      >;
+  for (const entry of value.slice(
+    0,
+    MAX_CONTEXT_ENTRIES,
+  )) {
+    if (
+      !entry ||
+      typeof entry !== "object" ||
+      Array.isArray(entry)
+    ) {
+      continue;
+    }
 
-      const id = cleanText(record.id, 200);
-      const word = cleanText(record.word, 200);
+    const record =
+      entry as Record<string, unknown>;
 
-      if (!id || !word) {
-        return null;
-      }
+    const id = cleanText(
+      record.id,
+      200,
+    );
 
-      const meanings = Array.isArray(
-        record.meanings,
-      )
+    const word = cleanText(
+      record.word,
+      200,
+    );
+
+    if (!id || !word) {
+      continue;
+    }
+
+    const meanings: ContextMeaning[] =
+      Array.isArray(record.meanings)
         ? record.meanings
-            .slice(0, MAX_MEANINGS_PER_ENTRY)
+            .slice(
+              0,
+              MAX_MEANINGS_PER_ENTRY,
+            )
             .map(cleanMeaning)
             .filter(
               (
@@ -200,31 +214,37 @@ function cleanContextEntries(
             )
         : [];
 
-      return {
-        id,
-        word,
-        slug: cleanText(record.slug, 200),
-        status: cleanText(
-          record.status,
-          120,
-        ),
-        pronunciation: cleanText(
-          record.pronunciation,
-          300,
-        ),
-        alternateSpellings: cleanText(
-          record.alternateSpellings,
-          400,
-        ),
-        meanings,
-      } satisfies ContextEntry;
-    })
-    .filter(
-      (
-        entry,
-      ): entry is ContextEntry =>
-        entry !== null,
-    );
+    const contextEntry: ContextEntry = {
+      id,
+      word,
+
+      slug: cleanText(
+        record.slug,
+        200,
+      ),
+
+      status: cleanText(
+        record.status,
+        120,
+      ),
+
+      pronunciation: cleanText(
+        record.pronunciation,
+        300,
+      ),
+
+      alternateSpellings: cleanText(
+        record.alternateSpellings,
+        400,
+      ),
+
+      meanings,
+    };
+
+    contextEntries.push(contextEntry);
+  }
+
+  return contextEntries;
 }
 
 function buildConversationInput(
