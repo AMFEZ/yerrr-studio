@@ -30,6 +30,7 @@ import { AIAssistantDrawer } from "@/components/ai/AIAssistantDrawer";
 import { AIEditorialHandoffPanel } from "@/components/ai/AIEditorialHandoffPanel";
 import { AIMissingFieldsPanel } from "@/components/ai/AIMissingFieldsPanel";
 import { AISemanticDuplicatePanel } from "@/components/ai/AISemanticDuplicatePanel";
+import { AIBatchTriagePanel } from "@/components/ai/AIBatchTriagePanel";
 import type { AIEditorialHandoff } from "@/types/aiEditorial";
 import { createClient } from "@/lib/supabase/client";
 
@@ -85,7 +86,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.7";
+const APP_VERSION = "Alpha 5.8";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -349,6 +350,11 @@ export default function Home() {
     const [
   isAISemanticDuplicatesOpen,
   setIsAISemanticDuplicatesOpen,
+] = useState(false);
+
+const [
+  isAIBatchTriageOpen,
+  setIsAIBatchTriageOpen,
 ] = useState(false);
 
 const [
@@ -1405,21 +1411,41 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
             id="entry-workspace"
             className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-6 md:mt-10"
           >
-            <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-xl font-bold">{workspaceTitle}</h2>
-                <p className="mt-1 text-sm leading-6 text-neutral-500">
-                  {workspaceDescription}
-                </p>
-              </div>
+            <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+  <div>
+    <h2 className="text-xl font-bold">
+      {workspaceTitle}
+    </h2>
 
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search deadass, brick, ocky..."
-                className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400 sm:text-base md:max-w-sm"
-              />
-            </div>
+    <p className="mt-1 text-sm leading-6 text-neutral-500">
+      {workspaceDescription}
+    </p>
+  </div>
+
+  <div className="flex w-full flex-col gap-3 md:max-w-sm">
+    <input
+      value={search}
+      onChange={(event) =>
+        setSearch(event.target.value)
+      }
+      placeholder="Search deadass, brick, ocky..."
+      className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400 sm:text-base"
+    />
+
+    {workspaceMode === "review" &&
+      !isAIBatchTriageOpen && (
+        <button
+          type="button"
+          onClick={() =>
+            setIsAIBatchTriageOpen(true)
+          }
+          className="w-full rounded-xl bg-fuchsia-300 px-4 py-3 text-sm font-black text-black shadow-lg transition hover:bg-fuchsia-200"
+        >
+          📋 AI batch triage
+        </button>
+      )}
+  </div>
+</div>
 
             <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="-mx-1 overflow-x-auto px-1 pb-1">
@@ -2260,6 +2286,19 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     }
     onOpenEntry={(entry) => {
       setIsAISemanticDuplicatesOpen(false);
+      setSelectedEntry(entry);
+    }}
+  />
+)}
+
+{isAIBatchTriageOpen && (
+  <AIBatchTriagePanel
+    entries={entries}
+    onClose={() =>
+      setIsAIBatchTriageOpen(false)
+    }
+    onOpenEntry={(entry) => {
+      setIsAIBatchTriageOpen(false);
       setSelectedEntry(entry);
     }}
   />
