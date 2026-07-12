@@ -12,10 +12,24 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll() {
-          // no-op for now
+
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(
+              ({ name, value, options }) => {
+                cookieStore.set(
+                  name,
+                  value,
+                  options,
+                );
+              },
+            );
+          } catch {
+            // Server Components cannot always write cookies.
+            // Route Handlers and Server Actions can.
+          }
         },
       },
-    }
+    },
   );
 }

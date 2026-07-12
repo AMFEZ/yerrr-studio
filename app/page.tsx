@@ -25,6 +25,7 @@ import { GraphMigrationDrawer } from "@/components/concepts/GraphMigrationDrawer
 import { CloudGraphDrawer } from "@/components/concepts/CloudGraphDrawer";
 import { CloudConceptEditorDrawer } from "@/components/concepts/CloudConceptEditorDrawer";
 import { CloudRelationshipEditorDrawer } from "@/components/relationships/CloudRelationshipEditorDrawer";
+import { AIAssistantDrawer } from "@/components/ai/AIAssistantDrawer";
 
 type WorkspaceMode =
   | "all"
@@ -73,7 +74,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 4.5";
+const APP_VERSION = "Alpha 5.0";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -322,7 +323,7 @@ export default function Home() {
   const [isCloudGraphOpen, setIsCloudGraphOpen] = useState(false);
   const [isCloudConceptEditorOpen, setIsCloudConceptEditorOpen] = useState(false);
   const [isCloudRelationshipEditorOpen, setIsCloudRelationshipEditorOpen] = useState(false);
-
+const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 useEffect(() => {
   setIsHydrated(true);
 }, []);
@@ -1086,25 +1087,42 @@ if (!isHydrated) {
   return (
   <main className="min-h-screen bg-neutral-950 text-white lg:flex">
     <Sidebar
-      entries={sidebarEntries}
-      activeView={sidebarActiveView}
-      setActiveView={handleWorkspaceModeChange}
-      onCreateEntry={() => setIsCaptureOpen(true)}
-      onOpenAdvancedSearch={() => setIsAdvancedSearchOpen(true)}
-      onOpenActivity={() => setIsActivityOpen(true)}
-      onOpenBackup={() => setIsBackupToolsOpen(true)}
-      onOpenConcepts={() => setIsConceptsOpen(true)}
-      onOpenGraphStats={() => setIsGraphStatsOpen(true)}
-      onOpenMergeConcepts={() => setIsMergeConceptsOpen(true)}
-      onOpenRelationships={() => setIsRelationshipsOpen(true)}
-      onOpenGraphExplorer={() => setIsGraphExplorerOpen(true)}
-      onOpenGraphMigration={() => setIsGraphMigrationOpen(true)}
-      onOpenCloudGraph={() => setIsCloudGraphOpen(true)}
-      onOpenCloudConceptEditor={() => setIsCloudConceptEditorOpen(true)}
-      onOpenCloudRelationshipEditor={() =>
-        setIsCloudRelationshipEditorOpen(true)
-      }
-    />
+  entries={sidebarEntries}
+  activeView={sidebarActiveView}
+  setActiveView={handleWorkspaceModeChange}
+  onCreateEntry={() => setIsCaptureOpen(true)}
+  onOpenAdvancedSearch={() =>
+    setIsAdvancedSearchOpen(true)
+  }
+  onOpenActivity={() => setIsActivityOpen(true)}
+  onOpenBackup={() => setIsBackupToolsOpen(true)}
+  onOpenConcepts={() => setIsConceptsOpen(true)}
+  onOpenGraphStats={() => setIsGraphStatsOpen(true)}
+  onOpenMergeConcepts={() =>
+    setIsMergeConceptsOpen(true)
+  }
+  onOpenRelationships={() =>
+    setIsRelationshipsOpen(true)
+  }
+  onOpenGraphExplorer={() =>
+    setIsGraphExplorerOpen(true)
+  }
+  onOpenGraphMigration={() =>
+    setIsGraphMigrationOpen(true)
+  }
+  onOpenCloudGraph={() =>
+    setIsCloudGraphOpen(true)
+  }
+  onOpenCloudConceptEditor={() =>
+    setIsCloudConceptEditorOpen(true)
+  }
+  onOpenCloudRelationshipEditor={() =>
+    setIsCloudRelationshipEditorOpen(true)
+  }
+  onOpenAIAssistant={() =>
+    setIsAIAssistantOpen(true)
+  }
+/>
 
     <section className="flex-1">
         <div className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:py-10 lg:px-8">
@@ -1797,6 +1815,16 @@ if (!isHydrated) {
   entries={entries}
   onMerged={() => {
     setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<AIAssistantDrawer
+  isOpen={isAIAssistantOpen}
+  onClose={() => setIsAIAssistantOpen(false)}
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsAIAssistantOpen(false);
+    setSelectedEntry(entry);
   }}
 />
 

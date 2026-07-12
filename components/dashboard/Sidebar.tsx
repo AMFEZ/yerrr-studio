@@ -31,6 +31,7 @@ type SidebarProps = {
   openCreateModal?: () => void;
 
   onOpenAdvancedSearch?: () => void;
+  onOpenAIAssistant?: () => void;
   onOpenActivity?: () => void;
   onOpenBackup?: () => void;
   onOpenGraphStats?: () => void;
@@ -56,7 +57,7 @@ type NavItem = {
   action?: () => void;
 };
 
-const VERSION_LABEL = "Alpha 4.5";
+const VERSION_LABEL = "Alpha 5.0";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -234,6 +235,15 @@ export function Sidebar(props: SidebarProps) {
   ];
 
   const toolItems: NavItem[] = [
+{
+  key: "ai-assistant",
+  label: "AI Assistant",
+  description:
+    "Ask grounded questions and review lexicon content.",
+  icon: "✨",
+  action: props.onOpenAIAssistant,
+},
+
     {
       key: "advanced-search",
       label: "Advanced Search",
@@ -485,6 +495,16 @@ export function Sidebar(props: SidebarProps) {
               </button>
             )}
 
+{props.onOpenAIAssistant && (
+  <button
+    type="button"
+    onClick={props.onOpenAIAssistant}
+    className="col-span-2 rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
+  >
+    ✨ AI Assistant
+  </button>
+)}
+
             {props.onOpenAdvancedSearch && (
               <button
                 type="button"
@@ -677,15 +697,14 @@ export function Sidebar(props: SidebarProps) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+              <div className="rounded-2xl bg-zinc-50 p-3">
   <p className="text-sm font-bold text-zinc-900">
-    Phase 4 Search Complete
+    Current: AI Assistant Foundation
   </p>
 
   <p className="mt-1 text-xs leading-5 text-zinc-500">
-    Ranked full-text search, typo tolerance, Knowledge Graph
-    discovery, recent searches, keyboard navigation, and
-    mobile optimization.
+    Grounded editorial conversations using matching lexicon
+    context, protected by Supabase authentication.
   </p>
 </div>
 
