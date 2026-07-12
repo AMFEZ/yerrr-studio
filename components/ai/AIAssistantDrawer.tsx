@@ -106,11 +106,20 @@ type ReviewResponse = {
   error?: string;
 };
 
+type ReviewDecision =
+  | "pending"
+  | "approved"
+  | "rejected";
+
 type StoredEntryReview = {
   id: string;
   createdAt: string;
   model?: string;
   review: EntryReview;
+  decisions?: Record<
+    string,
+    ReviewDecision
+  >;
 };
 
 const MAX_CONTEXT_ENTRIES = 20;
@@ -456,6 +465,74 @@ function readinessLabel(
   return "Needs editor review";
 }
 
+function getSuggestionKey(
+  edit: EntryReviewSuggestion,
+  index: number,
+) {
+  return [
+    index,
+    normalize(edit.field),
+    normalize(edit.suggestedValue).slice(
+      0,
+      80,
+    ),
+  ].join(":");
+}
+
+function createPendingDecisions(
+  review: EntryReview,
+) {
+  return Object.fromEntries(
+    review.suggestedEdits.map(
+      (edit, index) => [
+        getSuggestionKey(edit, index),
+        "pending" as ReviewDecision,
+      ],
+    ),
+  );
+}
+
+function formatApprovedEditsAsText(
+  review: EntryReview,
+  decisions: Record<
+    string,
+    ReviewDecision
+  >,
+) {
+  const approvedEdits =
+    review.suggestedEdits.filter(
+      (edit, index) =>
+        decisions[
+          getSuggestionKey(edit, index)
+        ] === "approved",
+    );
+
+  if (approvedEdits.length === 0) {
+    return [
+      `YERRR Studio approved AI edits: ${review.entryWord}`,
+      "",
+      "No suggestions have been approved yet.",
+    ].join("\n");
+  }
+
+  return [
+    `YERRR Studio approved AI edits: ${review.entryWord}`,
+    `Approved changes: ${approvedEdits.length}`,
+    "",
+    ...approvedEdits.flatMap(
+      (edit, index) => [
+        `${index + 1}. ${titleCaseToken(edit.field)}`,
+        `Current: ${edit.currentValue || "(empty)"}`,
+        `Approved suggestion: ${edit.suggestedValue || "(no replacement text)"}`,
+        `Reason: ${edit.reason}`,
+        `Confidence: ${edit.confidence}`,
+        "",
+      ],
+    ),
+    "Human verification is still required before saving.",
+  ].join("\n");
+}
+
 function formatReviewAsText(
   review: EntryReview,
 ) {
@@ -603,6 +680,17 @@ export function AIAssistantDrawer({
   const [historyQuery, setHistoryQuery] =
     useState("");
 
+  const [
+    activeReviewHistoryId,
+    setActiveReviewHistoryId,
+  ] = useState("");
+  const [
+    reviewDecisions,
+    setReviewDecisions,
+  ] = useState<
+    Record<string, ReviewDecision>
+  >({});
+
   const textareaRef =
     useRef<HTMLTextAreaElement | null>(null);
   const scrollRef =
@@ -679,6 +767,37 @@ export function AIAssistantDrawer({
         },
       );
     }, [historyQuery, reviewHistory]);
+
+  const reviewDecisionCounts =
+    useMemo(() => {
+      if (!review) {
+        return {
+          approved: 0,
+          rejected: 0,
+          pending: 0,
+        };
+      }
+
+      return review.suggestedEdits.reduce(
+        (counts, edit, index) => {
+          const decision =
+            reviewDecisions[
+              getSuggestionKey(
+                edit,
+                index,
+              )
+            ] ?? "pending";
+
+          counts[decision] += 1;
+          return counts;
+        },
+        {
+          approved: 0,
+          rejected: 0,
+          pending: 0,
+        },
+      );
+    }, [review, reviewDecisions]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -922,6 +1041,18 @@ export function AIAssistantDrawer({
     }
   }
 
+  function selectReviewEntry(
+    entryId: string,
+  ) {
+    setSelectedReviewEntryId(entryId);
+    setReview(null);
+    setReviewError("");
+    setReviewModelLabel("");
+    setCopiedLabel("");
+    setActiveReviewHistoryId("");
+    setReviewDecisions({});
+  }
+
   async function runEntryReview() {
     if (
       !selectedReviewEntry ||
@@ -972,13 +1103,26 @@ export function AIAssistantDrawer({
       setReview(data.review);
       setReviewModelLabel(data.model ?? "");
 
+      const initialDecisions =
+        createPendingDecisions(
+          data.review,
+        );
+
       const storedReview: StoredEntryReview = {
         id: createId(),
         createdAt:
           new Date().toISOString(),
         model: data.model ?? "",
         review: data.review,
+        decisions: initialDecisions,
       };
+
+      setActiveReviewHistoryId(
+        storedReview.id,
+      );
+      setReviewDecisions(
+        initialDecisions,
+      );
 
       setReviewHistory(
         (currentHistory) => [
@@ -1065,8 +1209,153 @@ export function AIAssistantDrawer({
     setReviewModelLabel(
       item.model ?? "",
     );
+    setActiveReviewHistoryId(item.id);
+    setReviewDecisions(
+      item.decisions ??
+        createPendingDecisions(
+          item.review,
+        ),
+    );
     setReviewError("");
     setCopiedLabel("");
+  }
+
+  function updateDecisionHistory(
+    nextDecisions: Record<
+      string,
+      ReviewDecision
+    >,
+  ) {
+    if (!activeReviewHistoryId) {
+      return;
+    }
+
+    setReviewHistory(
+      (currentHistory) =>
+        currentHistory.map((item) =>
+          item.id ===
+          activeReviewHistoryId
+            ? {
+                ...item,
+                decisions:
+                  nextDecisions,
+              }
+            : item,
+        ),
+    );
+  }
+
+  function setSuggestionDecision(
+    edit: EntryReviewSuggestion,
+    index: number,
+    decision: ReviewDecision,
+  ) {
+    const suggestionKey =
+      getSuggestionKey(edit, index);
+
+    setReviewDecisions(
+      (currentDecisions) => {
+        const nextDecisions = {
+          ...currentDecisions,
+          [suggestionKey]: decision,
+        };
+
+        updateDecisionHistory(
+          nextDecisions,
+        );
+
+        return nextDecisions;
+      },
+    );
+  }
+
+  function approveHighConfidence() {
+    if (!review) return;
+
+    const nextDecisions = {
+      ...reviewDecisions,
+    };
+
+    review.suggestedEdits.forEach(
+      (edit, index) => {
+        if (
+          edit.confidence === "high" &&
+          edit.suggestedValue.trim()
+        ) {
+          nextDecisions[
+            getSuggestionKey(
+              edit,
+              index,
+            )
+          ] = "approved";
+        }
+      },
+    );
+
+    setReviewDecisions(nextDecisions);
+    updateDecisionHistory(
+      nextDecisions,
+    );
+  }
+
+  function resetSuggestionDecisions() {
+    if (!review) return;
+
+    const nextDecisions =
+      createPendingDecisions(review);
+
+    setReviewDecisions(nextDecisions);
+    updateDecisionHistory(
+      nextDecisions,
+    );
+  }
+
+  function exportApprovedPlan() {
+    if (!review) return;
+
+    const approvedEdits =
+      review.suggestedEdits.filter(
+        (edit, index) =>
+          reviewDecisions[
+            getSuggestionKey(
+              edit,
+              index,
+            )
+          ] === "approved",
+      );
+
+    const dateSlug =
+      new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-");
+
+    downloadJsonFile(
+      `yerrr-approved-ai-edits-${normalize(
+        review.entryWord,
+      ).replace(/\s+/g, "-")}-${dateSlug}.json`,
+      {
+        app: "YERRR Studio",
+        version: "Alpha 5.3",
+        exportType:
+          "approved_ai_edit_plan",
+        exportedAt:
+          new Date().toISOString(),
+        entryId: review.entryId,
+        entryWord:
+          review.entryWord,
+        qualityScore:
+          review.qualityScore,
+        publishReadiness:
+          review.publishReadiness,
+        approvedEditCount:
+          approvedEdits.length,
+        approvedEdits,
+        verificationChecklist:
+          review.verificationChecklist,
+        note:
+          "This is an editorial approval plan. No Supabase changes were made.",
+      },
+    );
   }
 
   function deleteStoredReview(
@@ -1079,6 +1368,13 @@ export function AIAssistantDrawer({
             item.id !== reviewId,
         ),
     );
+
+    if (
+      activeReviewHistoryId ===
+      reviewId
+    ) {
+      setActiveReviewHistoryId("");
+    }
   }
 
   function clearReviewHistory() {
@@ -1101,7 +1397,7 @@ export function AIAssistantDrawer({
       `yerrr-ai-review-history-${dateSlug}.json`,
       {
         app: "YERRR Studio",
-        version: "Alpha 5.2",
+        version: "Alpha 5.3",
         exportType:
           "ai_entry_review_history",
         exportedAt:
@@ -1223,7 +1519,7 @@ export function AIAssistantDrawer({
                 <div className="space-y-5">
                   <section className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5">
                     <p className="font-black text-yellow-100">
-                      Alpha 5.2 lexicon chat
+                      Alpha 5.3 lexicon chat
                     </p>
 
                     <p className="mt-2 text-sm leading-6 text-yellow-100/70">
@@ -1449,17 +1745,18 @@ export function AIAssistantDrawer({
             <div className="space-y-5">
               <section className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5">
                 <p className="font-black text-yellow-100">
-                  Alpha 5.2 structured entry
+                  Alpha 5.3 structured entry
                   review
                 </p>
 
                 <p className="mt-2 text-sm leading-6 text-yellow-100/70">
                   Select one lexicon entry. The AI
                   will score editorial completeness,
-                  identify issues, propose careful
-                  revisions, and build a verification
-                  checklist. Nothing is saved
-                  automatically.
+                  identify issues, and propose careful
+                  revisions. Approve or reject each
+                  suggestion before handing the plan
+                  to the Entry Editor. Nothing writes
+                  to Supabase automatically.
                 </p>
               </section>
 
@@ -1541,6 +1838,30 @@ export function AIAssistantDrawer({
                                 <p className="mt-2 text-xs text-neutral-600">
                                   {formatReviewDate(item.createdAt)}
                                 </p>
+
+                                {item.decisions && (
+                                  <p className="mt-2 text-xs font-bold text-green-300">
+                                    {
+                                      Object.values(
+                                        item.decisions,
+                                      ).filter(
+                                        (decision) =>
+                                          decision ===
+                                          "approved",
+                                      ).length
+                                    } approved change{
+                                      Object.values(
+                                        item.decisions,
+                                      ).filter(
+                                        (decision) =>
+                                          decision ===
+                                          "approved",
+                                      ).length === 1
+                                        ? ""
+                                        : "s"
+                                    }
+                                  </p>
+                                )}
 
                                 <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-400">
                                   {item.review.summary}
@@ -1628,7 +1949,7 @@ export function AIAssistantDrawer({
                 <select
                   value={selectedReviewEntryId}
                   onChange={(event) =>
-                    setSelectedReviewEntryId(
+                    selectReviewEntry(
                       event.target.value,
                     )
                   }
@@ -1876,9 +2197,104 @@ export function AIAssistantDrawer({
                   </section>
 
                   <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
-                      Suggested edits
-                    </p>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
+                          Suggestion approval
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-neutral-400">
+                          Review each proposed edit before creating an editorial handoff plan.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={approveHighConfidence}
+                          disabled={
+                            review.suggestedEdits.length === 0
+                          }
+                          className="rounded-xl border border-green-400/20 bg-green-400/10 px-3 py-2 text-xs font-black text-green-100 hover:bg-green-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Approve high confidence
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={resetSuggestionDecisions}
+                          disabled={
+                            review.suggestedEdits.length === 0
+                          }
+                          className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Reset decisions
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-xl border border-green-400/20 bg-green-400/10 p-3 text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-green-200/70">
+                          Approved
+                        </p>
+                        <p className="mt-1 text-xl font-black text-green-100">
+                          {reviewDecisionCounts.approved}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-red-200/70">
+                          Rejected
+                        </p>
+                        <p className="mt-1 text-xl font-black text-red-100">
+                          {reviewDecisionCounts.rejected}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-neutral-700 bg-neutral-950 p-3 text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-neutral-500">
+                          Pending
+                        </p>
+                        <p className="mt-1 text-xl font-black text-white">
+                          {reviewDecisionCounts.pending}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void copyText(
+                            "approved-plan",
+                            formatApprovedEditsAsText(
+                              review,
+                              reviewDecisions,
+                            ),
+                          )
+                        }
+                        disabled={
+                          reviewDecisionCounts.approved === 0
+                        }
+                        className="rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {copiedLabel ===
+                        "approved-plan"
+                          ? "Approved plan copied"
+                          : "Copy approved plan"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={exportApprovedPlan}
+                        disabled={
+                          reviewDecisionCounts.approved === 0
+                        }
+                        className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Export approved plan
+                      </button>
+                    </div>
 
                     {review.suggestedEdits.length > 0 ? (
                       <div className="mt-4 space-y-4">
@@ -1886,11 +2302,29 @@ export function AIAssistantDrawer({
                           (edit, index) => {
                             const copyKey =
                               `edit-${index}`;
+                            const suggestionKey =
+                              getSuggestionKey(
+                                edit,
+                                index,
+                              );
+                            const decision =
+                              reviewDecisions[
+                                suggestionKey
+                              ] ?? "pending";
+
+                            const decisionClasses =
+                              decision ===
+                              "approved"
+                                ? "border-green-400/30 bg-green-400/5"
+                                : decision ===
+                                    "rejected"
+                                  ? "border-red-400/20 bg-red-400/5 opacity-70"
+                                  : "border-neutral-800 bg-neutral-950";
 
                             return (
                               <article
                                 key={`${edit.field}-${index}`}
-                                className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                                className={`rounded-2xl border p-4 ${decisionClasses}`}
                               >
                                 <div className="flex items-start justify-between gap-4">
                                   <div>
@@ -1902,6 +2336,20 @@ export function AIAssistantDrawer({
                                     <p className="mt-1 text-xs font-bold uppercase tracking-[0.15em] text-neutral-600">
                                       {edit.confidence} confidence
                                     </p>
+
+                                    <span
+                                      className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${
+                                        decision ===
+                                        "approved"
+                                          ? "border-green-400/30 bg-green-400/10 text-green-100"
+                                          : decision ===
+                                              "rejected"
+                                            ? "border-red-400/30 bg-red-400/10 text-red-100"
+                                            : "border-neutral-700 bg-neutral-900 text-neutral-400"
+                                      }`}
+                                    >
+                                      {decision}
+                                    </span>
                                   </div>
 
                                   <button
@@ -1944,6 +2392,65 @@ export function AIAssistantDrawer({
                                         "No replacement proposed; verify this field manually."}
                                     </p>
                                   </div>
+                                </div>
+
+                                <div className="mt-4 grid grid-cols-3 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setSuggestionDecision(
+                                        edit,
+                                        index,
+                                        "approved",
+                                      )
+                                    }
+                                    className={`rounded-xl border px-3 py-2 text-xs font-black ${
+                                      decision ===
+                                      "approved"
+                                        ? "border-green-400 bg-green-400 text-black"
+                                        : "border-green-400/20 bg-green-400/10 text-green-100 hover:bg-green-400/20"
+                                    }`}
+                                  >
+                                    Approve
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setSuggestionDecision(
+                                        edit,
+                                        index,
+                                        "rejected",
+                                      )
+                                    }
+                                    className={`rounded-xl border px-3 py-2 text-xs font-black ${
+                                      decision ===
+                                      "rejected"
+                                        ? "border-red-400 bg-red-400 text-black"
+                                        : "border-red-400/20 bg-red-400/10 text-red-100 hover:bg-red-400/20"
+                                    }`}
+                                  >
+                                    Reject
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setSuggestionDecision(
+                                        edit,
+                                        index,
+                                        "pending",
+                                      )
+                                    }
+                                    className={`rounded-xl border px-3 py-2 text-xs font-black ${
+                                      decision ===
+                                      "pending"
+                                        ? "border-neutral-500 bg-neutral-700 text-white"
+                                        : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-white"
+                                    }`}
+                                  >
+                                    Pending
+                                  </button>
                                 </div>
 
                                 <p className="mt-3 text-sm leading-6 text-neutral-500">
@@ -1998,13 +2505,13 @@ export function AIAssistantDrawer({
                       Human approval required
                     </p>
                     <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-                      This report is editorial
-                      guidance only. It is saved
-                      locally for review history,
-                      but it never edits Supabase.
-                      Copy useful suggestions into
-                      the Entry Editor, verify them,
-                      and save manually.
+                      Approval decisions and
+                      exported plans are editorial
+                      handoff tools only. They are
+                      stored locally and never edit
+                      Supabase. Open the Entry Editor,
+                      verify every approved change,
+                      then save manually.
                     </p>
                   </section>
                 </>
