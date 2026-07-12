@@ -30,6 +30,7 @@ type SidebarProps = {
   onNewEntry?: () => void;
   openCreateModal?: () => void;
 
+  onOpenAdvancedSearch?: () => void;
   onOpenActivity?: () => void;
   onOpenBackup?: () => void;
   onOpenGraphStats?: () => void;
@@ -54,8 +55,8 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.7D";
 
+const VERSION_LABEL = "Alpha 4.0";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -152,6 +153,7 @@ function countDuplicates(entries: EntryLike[]) {
     if (isTrashed(entry)) return;
 
     const word = getEntryWord(entry);
+
     if (!word) return;
 
     wordCounts.set(word, (wordCounts.get(word) ?? 0) + 1);
@@ -160,7 +162,9 @@ function countDuplicates(entries: EntryLike[]) {
   let duplicates = 0;
 
   wordCounts.forEach((count) => {
-    if (count > 1) duplicates += count;
+    if (count > 1) {
+      duplicates += count;
+    }
   });
 
   return duplicates;
@@ -231,6 +235,13 @@ export function Sidebar(props: SidebarProps) {
 
   const toolItems: NavItem[] = [
     {
+      key: "advanced-search",
+      label: "Advanced Search",
+      description: "Search every field with filters and ranked results.",
+      icon: "🔎",
+      action: props.onOpenAdvancedSearch,
+    },
+    {
       key: "duplicates",
       label: "Duplicates",
       description: "Find repeated words or phrases.",
@@ -260,7 +271,7 @@ export function Sidebar(props: SidebarProps) {
     },
   ];
 
-  const futureItems: NavItem[] = [
+  const graphItems: NavItem[] = [
     {
       key: "concepts",
       label: "Concepts",
@@ -334,7 +345,8 @@ export function Sidebar(props: SidebarProps) {
       (item.key === "review" &&
         ["needs_review", "review_needed"].includes(activeKey)) ||
       (item.key === "draft" && ["drafts"].includes(activeKey)) ||
-      (item.key === "published" && ["publish", "verified"].includes(activeKey));
+      (item.key === "published" &&
+        ["publish", "verified"].includes(activeKey));
 
     return (
       <button
@@ -425,7 +437,10 @@ export function Sidebar(props: SidebarProps) {
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">
                 YERRR Studio
               </p>
-              <h2 className="text-lg font-black text-zinc-950">Lexicon CMS</h2>
+
+              <h2 className="text-lg font-black text-zinc-950">
+                Lexicon CMS
+              </h2>
             </div>
 
             <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-bold text-zinc-600">
@@ -435,9 +450,14 @@ export function Sidebar(props: SidebarProps) {
 
           <select
             value={
-              ["all", "review", "draft", "published", "duplicates", "trash"].includes(
-                activeKey
-              )
+              [
+                "all",
+                "review",
+                "draft",
+                "published",
+                "duplicates",
+                "trash",
+              ].includes(activeKey)
                 ? activeKey
                 : "all"
             }
@@ -462,6 +482,16 @@ export function Sidebar(props: SidebarProps) {
                 className="rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
               >
                 + Entry
+              </button>
+            )}
+
+            {props.onOpenAdvancedSearch && (
+              <button
+                type="button"
+                onClick={props.onOpenAdvancedSearch}
+                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                🔎 Search
               </button>
             )}
 
@@ -569,7 +599,9 @@ export function Sidebar(props: SidebarProps) {
             </div>
           </div>
 
-          {(props.onCreateEntry || props.onNewEntry || props.openCreateModal) && (
+          {(props.onCreateEntry ||
+            props.onNewEntry ||
+            props.openCreateModal) && (
             <button
               type="button"
               onClick={createEntry}
@@ -587,7 +619,9 @@ export function Sidebar(props: SidebarProps) {
                 </h2>
               </div>
 
-              <div className="space-y-2">{mainItems.map(renderNavItem)}</div>
+              <div className="space-y-2">
+                {mainItems.map(renderNavItem)}
+              </div>
             </section>
 
             <section>
@@ -597,17 +631,21 @@ export function Sidebar(props: SidebarProps) {
                 </h2>
               </div>
 
-              <div className="space-y-2">{toolItems.map(renderNavItem)}</div>
+              <div className="space-y-2">
+                {toolItems.map(renderNavItem)}
+              </div>
             </section>
 
             <section>
               <div className="mb-2 flex items-center justify-between px-1">
                 <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400">
-                  Phase 3
+                  Knowledge Graph
                 </h2>
               </div>
 
-              <div className="space-y-2">{futureItems.map(renderNavItem)}</div>
+              <div className="space-y-2">
+                {graphItems.map(renderNavItem)}
+              </div>
             </section>
           </div>
 
@@ -620,19 +658,44 @@ export function Sidebar(props: SidebarProps) {
               <div>
                 <div className="flex items-center justify-between text-sm font-bold text-zinc-900">
                   <span>Phase 3 Knowledge Graph</span>
-                  <span>Cloud Complete</span>
+                  <span>Complete</span>
                 </div>
+
                 <div className="mt-2 h-2 rounded-full bg-zinc-100">
                   <div className="h-2 w-full rounded-full bg-zinc-950" />
                 </div>
               </div>
 
+              <div>
+                <div className="flex items-center justify-between text-sm font-bold text-zinc-900">
+                  <span>Phase 4 Search</span>
+                  <span>Started</span>
+                </div>
+
+                <div className="mt-2 h-2 rounded-full bg-zinc-100">
+                  <div className="h-2 w-1/5 rounded-full bg-zinc-950" />
+                </div>
+              </div>
+
               <div className="rounded-2xl bg-zinc-50 p-3">
                 <p className="text-sm font-bold text-zinc-900">
-                  Next: Search
+                  Current: Advanced Search
                 </p>
+
                 <p className="mt-1 text-xs leading-5 text-zinc-500">
-                  Search indexing, filters, ranking, and discovery tools.
+                  Search fields, filters, matching modes, ranking, and
+                  discovery tools.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+                <p className="text-sm font-bold text-zinc-900">
+                  Next: Supabase Full-Text Search
+                </p>
+
+                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                  Add a permanent database search index and server-side
+                  ranking.
                 </p>
               </div>
             </div>
@@ -645,6 +708,7 @@ export function Sidebar(props: SidebarProps) {
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-400">
                     Signed in
                   </p>
+
                   <p className="mt-1 truncate text-sm font-semibold text-zinc-800">
                     {props.userEmail}
                   </p>

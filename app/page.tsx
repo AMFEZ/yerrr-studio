@@ -15,6 +15,7 @@ import { StatCard } from "@/components/dashboard/StatCard";
 import { EntryCard } from "@/components/entries/EntryCard";
 import { CaptureModal } from "@/components/entries/CaptureModal";
 import { EntryEditorModal } from "@/components/entries/EntryEditorModal";
+import { AdvancedSearchDrawer } from "@/components/search/AdvancedSearchDrawer";
 import { ConceptDrawer } from "@/components/concepts/ConceptDrawer";
 import { GraphStatsDrawer } from "@/components/concepts/GraphStatsDrawer";
 import { MergeConceptsDrawer } from "@/components/concepts/MergeConceptsDrawer";
@@ -72,7 +73,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 3.7C4B";
+const APP_VERSION = "Alpha 4.0";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -297,12 +298,13 @@ export default function Home() {
   } = useEntries();
 
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
+  const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
   const [isBackupToolsOpen, setIsBackupToolsOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
   const [isConceptsOpen, setIsConceptsOpen] = useState(false);
   const [isGraphStatsOpen, setIsGraphStatsOpen] = useState(false);
   const [isMergeConceptsOpen, setIsMergeConceptsOpen] = useState(false);
-const [graphRevision, setGraphRevision] = useState(0);
+  const [graphRevision, setGraphRevision] = useState(0);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("all");
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
@@ -318,8 +320,8 @@ const [graphRevision, setGraphRevision] = useState(0);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isGraphMigrationOpen, setIsGraphMigrationOpen] = useState(false);
   const [isCloudGraphOpen, setIsCloudGraphOpen] = useState(false);
-  const [isCloudConceptEditorOpen, setIsCloudConceptEditorOpen, ] = useState(false);
-  const [isCloudRelationshipEditorOpen, setIsCloudRelationshipEditorOpen, ] = useState(false);
+  const [isCloudConceptEditorOpen, setIsCloudConceptEditorOpen] = useState(false);
+  const [isCloudRelationshipEditorOpen, setIsCloudRelationshipEditorOpen] = useState(false);
 
 useEffect(() => {
   setIsHydrated(true);
@@ -1088,6 +1090,7 @@ if (!isHydrated) {
       activeView={sidebarActiveView}
       setActiveView={handleWorkspaceModeChange}
       onCreateEntry={() => setIsCaptureOpen(true)}
+      onOpenAdvancedSearch={() => setIsAdvancedSearchOpen(true)}
       onOpenActivity={() => setIsActivityOpen(true)}
       onOpenBackup={() => setIsBackupToolsOpen(true)}
       onOpenConcepts={() => setIsConceptsOpen(true)}
@@ -1098,8 +1101,9 @@ if (!isHydrated) {
       onOpenGraphMigration={() => setIsGraphMigrationOpen(true)}
       onOpenCloudGraph={() => setIsCloudGraphOpen(true)}
       onOpenCloudConceptEditor={() => setIsCloudConceptEditorOpen(true)}
-      onOpenCloudRelationshipEditor={() => setIsCloudRelationshipEditorOpen(true)
-}
+      onOpenCloudRelationshipEditor={() =>
+        setIsCloudRelationshipEditorOpen(true)
+      }
     />
 
     <section className="flex-1">
@@ -1777,6 +1781,16 @@ if (!isHydrated) {
           </aside>
         </div>
       )}
+      <AdvancedSearchDrawer
+        isOpen={isAdvancedSearchOpen}
+        onClose={() => setIsAdvancedSearchOpen(false)}
+        entries={entries}
+        onOpenEntry={(entry) => {
+          setIsAdvancedSearchOpen(false);
+          setSelectedEntry(entry);
+        }}
+      />
+
       <MergeConceptsDrawer
   isOpen={isMergeConceptsOpen}
   onClose={() => setIsMergeConceptsOpen(false)}
