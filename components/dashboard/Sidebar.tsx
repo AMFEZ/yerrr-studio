@@ -56,7 +56,7 @@ type NavItem = {
   action?: () => void;
 };
 
-const VERSION_LABEL = "Alpha 4.1";
+const VERSION_LABEL = "Alpha 4.2";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -690,13 +690,13 @@ export function Sidebar(props: SidebarProps) {
 
               <div className="rounded-2xl border border-zinc-200 bg-white p-3">
                 <p className="text-sm font-bold text-zinc-900">
-                  Next: Supabase Full-Text Search
-                </p>
+  Current: Supabase Search Connection
+</p>
 
-                <p className="mt-1 text-xs leading-5 text-zinc-500">
-                  Add a permanent database search index and server-side
-                  ranking.
-                </p>
+<p className="mt-1 text-xs leading-5 text-zinc-500">
+  Ranked database search with local fallback and editorial
+  filters.
+</p>
               </div>
             </div>
           </div>

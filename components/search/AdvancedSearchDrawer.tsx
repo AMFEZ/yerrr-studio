@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Entry } from "@/types/entry";
+import { getSupabaseSearchClient } from "@/lib/supabaseSearchClient";
 
 type AdvancedSearchDrawerProps = {
   isOpen: boolean;
@@ -48,7 +49,23 @@ type SearchDocument = {
 
 type RankedResult = SearchDocument & {
   score: number;
+  databaseRank?: number;
+  databaseOrder?: number;
+  headline?: string;
 };
+
+type SupabaseSearchRow = {
+  entry_id: string;
+  word: string;
+  slug: string;
+  status: string;
+  pronunciation: string;
+  alternate_spellings: string;
+  rank: number;
+  headline: string;
+};
+
+type SearchSource = "local" | "supabase" | "fallback";
 
 function normalizeSearchText(value: unknown) {
   return String(value ?? "")
@@ -544,6 +561,58 @@ function getScopeLabel(scope: SearchScope) {
   return "All Fields";
 }
 
+function buildRpcQuery(
+  query: string,
+  matchMode: MatchMode
+) {
+  const cleanTokens = query
+    .trim()
+    .replace(/["\\]/g, " ")
+    .split(/\s+/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  if (cleanTokens.length === 0) {
+    return "";
+  }
+
+  if (matchMode === "phrase") {
+    return `"${cleanTokens.join(" ")}"`;
+  }
+
+  if (matchMode === "any") {
+    return cleanTokens
+      .map((token) => `"${token}"`)
+      .join(" OR ");
+  }
+
+  return cleanTokens.join(" ");
+}
+
+function getSearchSourceLabel(source: SearchSource) {
+  if (source === "supabase") {
+    return "Supabase index";
+  }
+
+  if (source === "fallback") {
+    return "Local fallback";
+  }
+
+  return "Local browse";
+}
+
+function getSearchSourceClasses(source: SearchSource) {
+  if (source === "supabase") {
+    return "border-green-400/20 bg-green-400/10 text-green-100";
+  }
+
+  if (source === "fallback") {
+    return "border-orange-400/20 bg-orange-400/10 text-orange-100";
+  }
+
+  return "border-neutral-700 bg-neutral-950 text-neutral-300";
+}
+
 export function AdvancedSearchDrawer({
   isOpen,
   onClose,
@@ -573,10 +642,33 @@ export function AdvancedSearchDrawer({
   const [sortMode, setSortMode] =
     useState<SortMode>("relevance");
 
+  const [serverRows, setServerRows] =
+    useState<SupabaseSearchRow[]>([]);
+
+  const [searchSource, setSearchSource] =
+    useState<SearchSource>("local");
+
+  const [isServerSearching, setIsServerSearching] =
+    useState(false);
+
+  const [serverError, setServerError] =
+    useState("");
+
+  const requestIdRef = useRef(0);
+
   const documents = useMemo(
     () => entries.map(createSearchDocument),
     [entries]
   );
+
+  const documentById = useMemo(() => {
+    return new Map(
+      documents.map((document) => [
+        String(document.entry.id),
+        document,
+      ])
+    );
+  }, [documents]);
 
   const statusOptions = useMemo(
     () =>
@@ -614,13 +706,161 @@ export function AdvancedSearchDrawer({
     [normalizedQuery]
   );
 
+  useEffect(() => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    if (!isOpen || !normalizedQuery) {
+      setServerRows([]);
+      setSearchSource("local");
+      setIsServerSearching(false);
+      setServerError("");
+      return;
+    }
+
+    const rpcQuery = buildRpcQuery(
+      query,
+      matchMode
+    );
+
+    if (!rpcQuery) {
+      setServerRows([]);
+      setSearchSource("local");
+      setIsServerSearching(false);
+      setServerError("");
+      return;
+    }
+
+    setServerRows([]);
+    setSearchSource("supabase");
+    setIsServerSearching(true);
+    setServerError("");
+
+    const timeoutId = window.setTimeout(
+      async () => {
+        try {
+          const supabase =
+            getSupabaseSearchClient();
+
+          const { data, error } =
+            await supabase.rpc(
+              "search_entries_fts",
+              {
+                p_query: rpcQuery,
+                p_limit: 100,
+              }
+            );
+
+          if (error) {
+            throw error;
+          }
+
+          if (
+            requestIdRef.current !== requestId
+          ) {
+            return;
+          }
+
+          const rows = Array.isArray(data)
+            ? (data as SupabaseSearchRow[])
+            : [];
+
+          if (rows.length === 0) {
+            setServerRows([]);
+            setSearchSource("fallback");
+            setServerError("");
+            return;
+          }
+
+          setServerRows(rows);
+          setSearchSource("supabase");
+          setServerError("");
+        } catch (error) {
+          if (
+            requestIdRef.current !== requestId
+          ) {
+            return;
+          }
+
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Supabase search is unavailable.";
+
+          setServerRows([]);
+          setSearchSource("fallback");
+          setServerError(message);
+        } finally {
+          if (
+            requestIdRef.current === requestId
+          ) {
+            setIsServerSearching(false);
+          }
+        }
+      },
+      300
+    );
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    isOpen,
+    matchMode,
+    normalizedQuery,
+    query,
+  ]);
+
+  const serverMetadataById = useMemo(() => {
+    return new Map(
+      serverRows.map((row, index) => [
+        String(row.entry_id),
+        {
+          rank: Number(row.rank) || 0,
+          order: index,
+          headline: String(row.headline ?? ""),
+        },
+      ])
+    );
+  }, [serverRows]);
+
+  const candidateDocuments = useMemo(() => {
+    if (
+      !normalizedQuery ||
+      searchSource !== "supabase"
+    ) {
+      return documents;
+    }
+
+    return serverRows
+      .map((row) =>
+        documentById.get(
+          String(row.entry_id)
+        )
+      )
+      .filter(
+        (
+          document
+        ): document is SearchDocument =>
+          Boolean(document)
+      );
+  }, [
+    documentById,
+    documents,
+    normalizedQuery,
+    searchSource,
+    serverRows,
+  ]);
+
   const results = useMemo<RankedResult[]>(() => {
-    const filtered = documents
+    const filtered = candidateDocuments
       .filter((document) => {
         if (
           statusFilter !== "all" &&
-          String(document.entry.status) !==
-            statusFilter
+          normalizeSearchText(
+            document.entry.status
+          ) !==
+            normalizeSearchText(statusFilter)
         ) {
           return false;
         }
@@ -668,14 +908,27 @@ export function AdvancedSearchDrawer({
           matchMode
         );
       })
-      .map((document) => ({
-        ...document,
-        score: scoreDocument(
-          document,
-          normalizedQuery,
-          tokens
-        ),
-      }));
+      .map((document) => {
+        const serverMetadata =
+          serverMetadataById.get(
+            String(document.entry.id)
+          );
+
+        return {
+          ...document,
+          score: scoreDocument(
+            document,
+            normalizedQuery,
+            tokens
+          ),
+          databaseRank:
+            serverMetadata?.rank,
+          databaseOrder:
+            serverMetadata?.order,
+          headline:
+            serverMetadata?.headline,
+        };
+      });
 
     return filtered.sort((a, b) => {
       if (sortMode === "a-z") {
@@ -699,6 +952,16 @@ export function AdvancedSearchDrawer({
         return a.word.localeCompare(b.word);
       }
 
+      if (
+        searchSource === "supabase" &&
+        typeof a.databaseOrder === "number" &&
+        typeof b.databaseOrder === "number"
+      ) {
+        return (
+          a.databaseOrder - b.databaseOrder
+        );
+      }
+
       if (b.score !== a.score) {
         return b.score - a.score;
       }
@@ -706,12 +969,14 @@ export function AdvancedSearchDrawer({
       return a.word.localeCompare(b.word);
     });
   }, [
-    documents,
+    candidateDocuments,
     matchMode,
     normalizedQuery,
     partOfSpeechFilter,
     pronunciationFilter,
     scope,
+    searchSource,
+    serverMetadataById,
     sortMode,
     statusFilter,
     tokens,
@@ -752,6 +1017,7 @@ export function AdvancedSearchDrawer({
     sortMode !== "relevance";
 
   function clearSearch() {
+    requestIdRef.current += 1;
     setQuery("");
     setScope("all");
     setMatchMode("all");
@@ -759,6 +1025,10 @@ export function AdvancedSearchDrawer({
     setPartOfSpeechFilter("all");
     setPronunciationFilter("all");
     setSortMode("relevance");
+    setServerRows([]);
+    setSearchSource("local");
+    setIsServerSearching(false);
+    setServerError("");
   }
 
   function openEntry(entry: Entry) {
@@ -980,6 +1250,39 @@ export function AdvancedSearchDrawer({
               </select>
             </label>
           </div>
+
+          <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-neutral-800 bg-neutral-950 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-black ${getSearchSourceClasses(
+                  searchSource
+                )}`}
+              >
+                {getSearchSourceLabel(searchSource)}
+              </span>
+
+              {isServerSearching && (
+                <span className="flex items-center gap-2 text-xs font-bold text-yellow-200">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
+                  Searching Supabase...
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs leading-5 text-neutral-500">
+              {searchSource === "supabase"
+                ? "Results are ranked by the Alpha 4.1 database index."
+                : searchSource === "fallback"
+                ? "Using browser search so partial terms and temporary RPC failures still work."
+                : "Type a query to use the Supabase full-text index."}
+            </p>
+          </div>
+
+          {serverError && (
+            <div className="mt-3 rounded-2xl border border-orange-400/20 bg-orange-400/10 p-3 text-xs leading-5 text-orange-100">
+              Supabase search fallback: {serverError}
+            </div>
+          )}
         </section>
 
         <section className="my-5 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -1048,7 +1351,19 @@ export function AdvancedSearchDrawer({
             </p>
           </div>
 
-          {results.length === 0 ? (
+          {isServerSearching ? (
+            <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-8 text-center">
+              <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
+
+              <p className="mt-4 font-black text-yellow-100">
+                Searching the Supabase index...
+              </p>
+
+              <p className="mt-2 text-sm text-yellow-100/60">
+                Ranked database results will appear here.
+              </p>
+            </div>
+          ) : results.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-neutral-700 p-8 text-center">
               <p className="font-black text-white">
                 No entries matched this search.
@@ -1082,7 +1397,10 @@ export function AdvancedSearchDrawer({
                       {normalizedQuery &&
                         sortMode === "relevance" && (
                           <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
-                            {result.score} pts
+                            {searchSource === "supabase" &&
+                            typeof result.databaseRank === "number"
+                              ? `DB ${result.databaseRank.toFixed(4)}`
+                              : `${result.score} pts`}
                           </span>
                         )}
 
@@ -1135,17 +1453,18 @@ export function AdvancedSearchDrawer({
         </section>
 
         <div className="mt-6 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-  <p className="font-black text-yellow-100">
-    Alpha 4.1 note
-  </p>
+          <p className="font-black text-yellow-100">
+            Alpha 4.2 note
+          </p>
 
-  <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-    The Supabase full-text search index is installed and
-    synchronized. This drawer still searches the entries
-    loaded in Studio until Alpha 4.2 connects it to the
-    ranked search RPC.
-  </p>
-</div>
+          <p className="mt-2 text-sm leading-6 text-yellow-100/70">
+            Advanced Search now calls the Supabase
+            full-text RPC after a short debounce and keeps
+            the browser search as a fallback for partial
+            terms, zero-result prefix searches, and temporary
+            connection errors.
+          </p>
+        </div>
       </aside>
     </div>
   );
