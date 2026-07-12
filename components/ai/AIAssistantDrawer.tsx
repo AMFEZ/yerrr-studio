@@ -59,19 +59,11 @@ type AssistantResponse = {
 };
 
 type ReviewReadiness =
-  | "not_ready"
-  | "needs_editor_review"
-  | "ready_after_verification";
+  "not_ready" | "needs_editor_review" | "ready_after_verification";
 
-type ReviewSeverity =
-  | "low"
-  | "medium"
-  | "high";
+type ReviewSeverity = "low" | "medium" | "high";
 
-type ReviewConfidence =
-  | "low"
-  | "medium"
-  | "high";
+type ReviewConfidence = "low" | "medium" | "high";
 
 type EntryReviewIssue = {
   category: string;
@@ -106,26 +98,21 @@ type ReviewResponse = {
   error?: string;
 };
 
-type ReviewDecision =
-  | "pending"
-  | "approved"
-  | "rejected";
+type ReviewDecision = "pending" | "approved" | "rejected";
+
+type ReviewQueueFilter = "all" | "needs_decisions" | "ready" | "has_rejections";
 
 type StoredEntryReview = {
   id: string;
   createdAt: string;
   model?: string;
   review: EntryReview;
-  decisions?: Record<
-    string,
-    ReviewDecision
-  >;
+  decisions?: Record<string, ReviewDecision>;
 };
 
 const MAX_CONTEXT_ENTRIES = 20;
 const REVIEW_HISTORY_LIMIT = 30;
-const REVIEW_HISTORY_STORAGE_KEY =
-  "yerrr-studio-ai-review-history";
+const REVIEW_HISTORY_STORAGE_KEY = "yerrr-studio-ai-review-history";
 
 const QUICK_PROMPTS = [
   "Explain the difference between two similar entries and note where the lexicon needs more evidence.",
@@ -159,9 +146,7 @@ const STOP_WORDS = new Set([
 ]);
 
 function createId() {
-  return `${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function normalize(value: unknown) {
@@ -186,10 +171,7 @@ function collectStrings(
     return output;
   }
 
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "number" || typeof value === "boolean") {
     output.push(String(value));
     return output;
   }
@@ -205,47 +187,31 @@ function collectStrings(
   visited.add(value);
 
   if (Array.isArray(value)) {
-    value.forEach((item) =>
-      collectStrings(item, output, visited),
-    );
+    value.forEach((item) => collectStrings(item, output, visited));
 
     return output;
   }
 
-  Object.values(value).forEach((item) =>
-    collectStrings(item, output, visited),
-  );
+  Object.values(value).forEach((item) => collectStrings(item, output, visited));
 
   return output;
 }
 
-function readField(
-  source: unknown,
-  aliases: string[],
-) {
+function readField(source: unknown, aliases: string[]) {
   if (!source || typeof source !== "object") {
     return "";
   }
 
   const aliasSet = new Set(
-    aliases.map((alias) =>
-      alias
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, ""),
-    ),
+    aliases.map((alias) => alias.toLowerCase().replace(/[^a-z0-9]/g, "")),
   );
 
   for (const [key, value] of Object.entries(
     source as Record<string, unknown>,
   )) {
-    const normalizedKey = key
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "");
+    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-    if (
-      aliasSet.has(normalizedKey) &&
-      typeof value === "string"
-    ) {
+    if (aliasSet.has(normalizedKey) && typeof value === "string") {
       return value.trim();
     }
   }
@@ -253,9 +219,7 @@ function readField(
   return "";
 }
 
-function compactMeaning(
-  meaning: unknown,
-): CompactMeaning {
+function compactMeaning(meaning: unknown): CompactMeaning {
   return {
     partOfSpeech: readField(meaning, [
       "partOfSpeech",
@@ -263,11 +227,7 @@ function compactMeaning(
       "pos",
       "grammar",
     ]),
-    definition: readField(meaning, [
-      "definition",
-      "meaning",
-      "gloss",
-    ]),
+    definition: readField(meaning, ["definition", "meaning", "gloss"]),
     plainEnglish: readField(meaning, [
       "plainEnglish",
       "plain_english",
@@ -286,10 +246,7 @@ function compactMeaning(
       "culture",
       "context",
     ]),
-    tone: readField(meaning, [
-      "tone",
-      "tones",
-    ]),
+    tone: readField(meaning, ["tone", "tones"]),
     usageFrequency: readField(meaning, [
       "usageFrequency",
       "usage_frequency",
@@ -314,15 +271,9 @@ function compactMeaning(
   };
 }
 
-function compactEntry(
-  entry: Entry,
-): CompactEntry {
-  const meanings = Array.isArray(
-    entry.meanings,
-  )
-    ? entry.meanings
-        .slice(0, 8)
-        .map(compactMeaning)
+function compactEntry(entry: Entry): CompactEntry {
+  const meanings = Array.isArray(entry.meanings)
+    ? entry.meanings.slice(0, 8).map(compactMeaning)
     : [];
 
   return {
@@ -330,50 +281,30 @@ function compactEntry(
     word: String(entry.word ?? ""),
     slug: String(entry.slug ?? ""),
     status: String(entry.status ?? ""),
-    pronunciation: String(
-      entry.pronunciation ?? "",
-    ),
-    alternateSpellings: String(
-      entry.alternateSpellings ?? "",
-    ),
+    pronunciation: String(entry.pronunciation ?? ""),
+    alternateSpellings: String(entry.alternateSpellings ?? ""),
     meanings,
   };
 }
 
-function scoreEntry(
-  entry: Entry,
-  prompt: string,
-) {
+function scoreEntry(entry: Entry, prompt: string) {
   const normalizedPrompt = normalize(prompt);
 
   const tokens = normalizedPrompt
     .split(" ")
-    .filter(
-      (token) =>
-        token.length > 1 &&
-        !STOP_WORDS.has(token),
-    );
+    .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
 
   const word = normalize(entry.word);
   const slug = normalize(entry.slug);
-  const allText = normalize(
-    collectStrings(entry).join(" "),
-  );
+  const allText = normalize(collectStrings(entry).join(" "));
 
   let score = 0;
 
-  if (
-    normalizedPrompt &&
-    word === normalizedPrompt
-  ) {
+  if (normalizedPrompt && word === normalizedPrompt) {
     score += 300;
   }
 
-  if (
-    normalizedPrompt &&
-    normalizedPrompt.includes(word) &&
-    word.length > 1
-  ) {
+  if (normalizedPrompt && normalizedPrompt.includes(word) && word.length > 1) {
     score += 120;
   }
 
@@ -398,10 +329,7 @@ function scoreEntry(
   return score;
 }
 
-function selectContextEntries(
-  entries: Entry[],
-  prompt: string,
-) {
+function selectContextEntries(entries: Entry[], prompt: string) {
   const ranked = entries
     .map((entry) => ({
       entry,
@@ -412,28 +340,19 @@ function selectContextEntries(
         return b.score - a.score;
       }
 
-      return String(
-        a.entry.word,
-      ).localeCompare(String(b.entry.word));
+      return String(a.entry.word).localeCompare(String(b.entry.word));
     });
 
-  const positiveMatches = ranked.filter(
-    (item) => item.score > 0,
-  );
+  const positiveMatches = ranked.filter((item) => item.score > 0);
 
-  const selected =
-    positiveMatches.length > 0
-      ? positiveMatches
-      : ranked;
+  const selected = positiveMatches.length > 0 ? positiveMatches : ranked;
 
   return selected
     .slice(0, MAX_CONTEXT_ENTRIES)
     .map((item) => compactEntry(item.entry));
 }
 
-function getErrorMessage(
-  value: unknown,
-) {
+function getErrorMessage(value: unknown) {
   if (value instanceof Error) {
     return value.message;
   }
@@ -444,68 +363,63 @@ function getErrorMessage(
 function titleCaseToken(value: string) {
   return value
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase(),
-    );
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function readinessLabel(
-  readiness: ReviewReadiness,
-) {
+function readinessLabel(readiness: ReviewReadiness) {
   if (readiness === "not_ready") {
     return "Not ready";
   }
 
-  if (
-    readiness === "ready_after_verification"
-  ) {
+  if (readiness === "ready_after_verification") {
     return "Ready after verification";
   }
 
   return "Needs editor review";
 }
 
-function getSuggestionKey(
-  edit: EntryReviewSuggestion,
-  index: number,
-) {
+function getSuggestionKey(edit: EntryReviewSuggestion, index: number) {
   return [
     index,
     normalize(edit.field),
-    normalize(edit.suggestedValue).slice(
-      0,
-      80,
-    ),
+    normalize(edit.suggestedValue).slice(0, 80),
   ].join(":");
 }
 
-function createPendingDecisions(
-  review: EntryReview,
-) {
+function createPendingDecisions(review: EntryReview) {
   return Object.fromEntries(
-    review.suggestedEdits.map(
-      (edit, index) => [
-        getSuggestionKey(edit, index),
-        "pending" as ReviewDecision,
-      ],
-    ),
+    review.suggestedEdits.map((edit, index) => [
+      getSuggestionKey(edit, index),
+      "pending" as ReviewDecision,
+    ]),
+  );
+}
+
+function getStoredDecisionCounts(item: StoredEntryReview) {
+  const decisions = item.decisions ?? createPendingDecisions(item.review);
+
+  return item.review.suggestedEdits.reduce(
+    (counts, edit, index) => {
+      const decision = decisions[getSuggestionKey(edit, index)] ?? "pending";
+
+      counts[decision] += 1;
+      return counts;
+    },
+    {
+      approved: 0,
+      rejected: 0,
+      pending: 0,
+    },
   );
 }
 
 function formatApprovedEditsAsText(
   review: EntryReview,
-  decisions: Record<
-    string,
-    ReviewDecision
-  >,
+  decisions: Record<string, ReviewDecision>,
 ) {
-  const approvedEdits =
-    review.suggestedEdits.filter(
-      (edit, index) =>
-        decisions[
-          getSuggestionKey(edit, index)
-        ] === "approved",
-    );
+  const approvedEdits = review.suggestedEdits.filter(
+    (edit, index) => decisions[getSuggestionKey(edit, index)] === "approved",
+  );
 
   if (approvedEdits.length === 0) {
     return [
@@ -519,26 +433,20 @@ function formatApprovedEditsAsText(
     `YERRR Studio approved AI edits: ${review.entryWord}`,
     `Approved changes: ${approvedEdits.length}`,
     "",
-    ...approvedEdits.flatMap(
-      (edit, index) => [
-        `${index + 1}. ${titleCaseToken(edit.field)}`,
-        `Current: ${edit.currentValue || "(empty)"}`,
-        `Approved suggestion: ${edit.suggestedValue || "(no replacement text)"}`,
-        `Reason: ${edit.reason}`,
-        `Confidence: ${edit.confidence}`,
-        "",
-      ],
-    ),
+    ...approvedEdits.flatMap((edit, index) => [
+      `${index + 1}. ${titleCaseToken(edit.field)}`,
+      `Current: ${edit.currentValue || "(empty)"}`,
+      `Approved suggestion: ${edit.suggestedValue || "(no replacement text)"}`,
+      `Reason: ${edit.reason}`,
+      `Confidence: ${edit.confidence}`,
+      "",
+    ]),
     "Human verification is still required before saving.",
   ].join("\n");
 }
 
-function formatReviewAsText(
-  review: EntryReview,
-) {
-  const strengths = review.strengths
-    .map((item) => `- ${item}`)
-    .join("\n");
+function formatReviewAsText(review: EntryReview) {
+  const strengths = review.strengths.map((item) => `- ${item}`).join("\n");
 
   const issues = review.issues
     .map(
@@ -554,10 +462,9 @@ function formatReviewAsText(
     )
     .join("\n\n");
 
-  const checklist =
-    review.verificationChecklist
-      .map((item) => `- ${item}`)
-      .join("\n");
+  const checklist = review.verificationChecklist
+    .map((item) => `- ${item}`)
+    .join("\n");
 
   return [
     `YERRR Studio AI Entry Review: ${review.entryWord}`,
@@ -581,36 +488,23 @@ function formatReviewAsText(
   ].join("\n");
 }
 
-function formatReviewDate(
-  value: string,
-) {
-  return new Intl.DateTimeFormat(
-    undefined,
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    },
-  ).format(new Date(value));
+function formatReviewDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
-function downloadJsonFile(
-  filename: string,
-  value: unknown,
-) {
-  const blob = new Blob(
-    [JSON.stringify(value, null, 2)],
-    {
-      type: "application/json",
-    },
-  );
+function downloadJsonFile(filename: string, value: unknown) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], {
+    type: "application/json",
+  });
 
-  const url =
-    URL.createObjectURL(blob);
-  const link =
-    document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
 
   link.href = url;
   link.download = filename;
@@ -621,9 +515,7 @@ function downloadJsonFile(
   URL.revokeObjectURL(url);
 }
 
-function severityClasses(
-  severity: ReviewSeverity,
-) {
+function severityClasses(severity: ReviewSeverity) {
   if (severity === "high") {
     return "border-red-400/30 bg-red-400/10 text-red-100";
   }
@@ -641,79 +533,44 @@ export function AIAssistantDrawer({
   entries = [],
   onOpenEntry,
 }: AIAssistantDrawerProps) {
-  const [mode, setMode] =
-    useState<AssistantMode>("chat");
+  const [mode, setMode] = useState<AssistantMode>("chat");
 
-  const [messages, setMessages] = useState<
-    ChatMessage[]
-  >([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const [draft, setDraft] = useState("");
-  const [isSending, setIsSending] =
-    useState(false);
-  const [modelLabel, setModelLabel] =
-    useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [modelLabel, setModelLabel] = useState("");
 
-  const [reviewQuery, setReviewQuery] =
-    useState("");
-  const [selectedReviewEntryId, setSelectedReviewEntryId] =
-    useState("");
-  const [review, setReview] =
-    useState<EntryReview | null>(null);
-  const [reviewError, setReviewError] =
-    useState("");
-  const [isReviewing, setIsReviewing] =
-    useState(false);
-  const [reviewModelLabel, setReviewModelLabel] =
-    useState("");
-  const [copiedLabel, setCopiedLabel] =
-    useState("");
+  const [reviewQuery, setReviewQuery] = useState("");
+  const [selectedReviewEntryId, setSelectedReviewEntryId] = useState("");
+  const [review, setReview] = useState<EntryReview | null>(null);
+  const [reviewError, setReviewError] = useState("");
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [reviewModelLabel, setReviewModelLabel] = useState("");
+  const [copiedLabel, setCopiedLabel] = useState("");
 
-  const [
-    reviewHistory,
-    setReviewHistory,
-  ] = useState<StoredEntryReview[]>([]);
-  const [
-    isReviewHistoryHydrated,
-    setIsReviewHistoryHydrated,
-  ] = useState(false);
-  const [historyQuery, setHistoryQuery] =
-    useState("");
+  const [reviewHistory, setReviewHistory] = useState<StoredEntryReview[]>([]);
+  const [isReviewHistoryHydrated, setIsReviewHistoryHydrated] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyFilter, setHistoryFilter] = useState<ReviewQueueFilter>("all");
 
-  const [
-    activeReviewHistoryId,
-    setActiveReviewHistoryId,
-  ] = useState("");
-  const [
-    reviewDecisions,
-    setReviewDecisions,
-  ] = useState<
+  const [activeReviewHistoryId, setActiveReviewHistoryId] = useState("");
+  const [reviewDecisions, setReviewDecisions] = useState<
     Record<string, ReviewDecision>
   >({});
 
-  const textareaRef =
-    useRef<HTMLTextAreaElement | null>(null);
-  const scrollRef =
-    useRef<HTMLDivElement | null>(null);
-  const chatAbortRef =
-    useRef<AbortController | null>(null);
-  const reviewAbortRef =
-    useRef<AbortController | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const reviewAbortRef = useRef<AbortController | null>(null);
 
   const entryById = useMemo(() => {
-    return new Map(
-      entries.map((entry) => [
-        String(entry.id),
-        entry,
-      ]),
-    );
+    return new Map(entries.map((entry) => [String(entry.id), entry]));
   }, [entries]);
 
   const sortedEntries = useMemo(() => {
     return [...entries].sort((a, b) =>
-      String(a.word).localeCompare(
-        String(b.word),
-      ),
+      String(a.word).localeCompare(String(b.word)),
     );
   }, [entries]);
 
@@ -725,11 +582,7 @@ export function AIAssistantDrawer({
     }
 
     return sortedEntries.filter((entry) => {
-      return [
-        entry.word,
-        entry.slug,
-        entry.alternateSpellings,
-      ].some((value) =>
+      return [entry.word, entry.slug, entry.alternateSpellings].some((value) =>
         normalize(value).includes(query),
       );
     });
@@ -737,106 +590,127 @@ export function AIAssistantDrawer({
 
   const selectedReviewEntry = useMemo(() => {
     return selectedReviewEntryId
-      ? entryById.get(selectedReviewEntryId) ??
-          null
+      ? (entryById.get(selectedReviewEntryId) ?? null)
       : null;
   }, [entryById, selectedReviewEntryId]);
 
-  const filteredReviewHistory =
-    useMemo(() => {
-      const query =
-        normalize(historyQuery);
+  const reviewQueueSummary = useMemo(() => {
+    return reviewHistory.reduce(
+      (summary, item) => {
+        const counts = getStoredDecisionCounts(item);
+
+        summary.approvedEdits += counts.approved;
+        summary.pendingEdits += counts.pending;
+        summary.rejectedEdits += counts.rejected;
+
+        if (counts.pending > 0) {
+          summary.needsDecisions += 1;
+        }
+
+        if (counts.approved > 0 && counts.pending === 0) {
+          summary.readyPlans += 1;
+        }
+
+        return summary;
+      },
+      {
+        approvedEdits: 0,
+        pendingEdits: 0,
+        rejectedEdits: 0,
+        needsDecisions: 0,
+        readyPlans: 0,
+      },
+    );
+  }, [reviewHistory]);
+
+  const filteredReviewHistory = useMemo(() => {
+    const query = normalize(historyQuery);
+
+    return reviewHistory.filter((item) => {
+      const counts = getStoredDecisionCounts(item);
+
+      const matchesFilter =
+        historyFilter === "all" ||
+        (historyFilter === "needs_decisions" && counts.pending > 0) ||
+        (historyFilter === "ready" &&
+          counts.approved > 0 &&
+          counts.pending === 0) ||
+        (historyFilter === "has_rejections" && counts.rejected > 0);
+
+      if (!matchesFilter) {
+        return false;
+      }
 
       if (!query) {
-        return reviewHistory;
+        return true;
       }
 
-      return reviewHistory.filter(
-        (item) => {
-          const searchableText =
-            normalize([
-              item.review.entryWord,
-              item.review.summary,
-              item.review.publishReadiness,
-              item.review.qualityScore,
-            ].join(" "));
-
-          return searchableText.includes(
-            query,
-          );
-        },
+      const searchableText = normalize(
+        [
+          item.review.entryWord,
+          item.review.summary,
+          item.review.publishReadiness,
+          item.review.qualityScore,
+          counts.approved,
+          counts.pending,
+          counts.rejected,
+        ].join(" "),
       );
-    }, [historyQuery, reviewHistory]);
 
-  const reviewDecisionCounts =
-    useMemo(() => {
-      if (!review) {
-        return {
-          approved: 0,
-          rejected: 0,
-          pending: 0,
-        };
-      }
+      return searchableText.includes(query);
+    });
+  }, [historyFilter, historyQuery, reviewHistory]);
 
-      return review.suggestedEdits.reduce(
-        (counts, edit, index) => {
-          const decision =
-            reviewDecisions[
-              getSuggestionKey(
-                edit,
-                index,
-              )
-            ] ?? "pending";
+  const reviewDecisionCounts = useMemo(() => {
+    if (!review) {
+      return {
+        approved: 0,
+        rejected: 0,
+        pending: 0,
+      };
+    }
 
-          counts[decision] += 1;
-          return counts;
-        },
-        {
-          approved: 0,
-          rejected: 0,
-          pending: 0,
-        },
-      );
-    }, [review, reviewDecisions]);
+    return review.suggestedEdits.reduce(
+      (counts, edit, index) => {
+        const decision =
+          reviewDecisions[getSuggestionKey(edit, index)] ?? "pending";
+
+        counts[decision] += 1;
+        return counts;
+      },
+      {
+        approved: 0,
+        rejected: 0,
+        pending: 0,
+      },
+    );
+  }, [review, reviewDecisions]);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    const previousOverflow =
-      document.body.style.overflow;
+    const previousOverflow = document.body.style.overflow;
 
     document.body.style.overflow = "hidden";
 
-    const focusFrame =
-      window.requestAnimationFrame(() => {
-        if (mode === "chat") {
-          textareaRef.current?.focus();
-        }
-      });
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (mode === "chat") {
+        textareaRef.current?.focus();
+      }
+    });
 
-    function handleEscape(
-      event: globalThis.KeyboardEvent,
-    ) {
+    function handleEscape(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
       }
     }
 
-    window.addEventListener(
-      "keydown",
-      handleEscape,
-    );
+    window.addEventListener("keydown", handleEscape);
 
     return () => {
-      window.cancelAnimationFrame(
-        focusFrame,
-      );
-      window.removeEventListener(
-        "keydown",
-        handleEscape,
-      );
-      document.body.style.overflow =
-        previousOverflow;
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = previousOverflow;
       chatAbortRef.current?.abort();
       reviewAbortRef.current?.abort();
     };
@@ -853,39 +727,30 @@ export function AIAssistantDrawer({
 
   useEffect(() => {
     try {
-      const rawHistory =
-        window.localStorage.getItem(
-          REVIEW_HISTORY_STORAGE_KEY,
-        );
+      const rawHistory = window.localStorage.getItem(
+        REVIEW_HISTORY_STORAGE_KEY,
+      );
 
       if (!rawHistory) {
         setReviewHistory([]);
         return;
       }
 
-      const parsedHistory =
-        JSON.parse(rawHistory) as unknown;
+      const parsedHistory = JSON.parse(rawHistory) as unknown;
 
       if (Array.isArray(parsedHistory)) {
         setReviewHistory(
           parsedHistory
-            .filter(
-              (
-                item,
-              ): item is StoredEntryReview =>
-                Boolean(
-                  item &&
-                    typeof item ===
-                      "object" &&
-                    "id" in item &&
-                    "createdAt" in item &&
-                    "review" in item,
-                ),
+            .filter((item): item is StoredEntryReview =>
+              Boolean(
+                item &&
+                typeof item === "object" &&
+                "id" in item &&
+                "createdAt" in item &&
+                "review" in item,
+              ),
             )
-            .slice(
-              0,
-              REVIEW_HISTORY_LIMIT,
-            ),
+            .slice(0, REVIEW_HISTORY_LIMIT),
         );
       }
     } catch {
@@ -904,16 +769,10 @@ export function AIAssistantDrawer({
       REVIEW_HISTORY_STORAGE_KEY,
       JSON.stringify(reviewHistory),
     );
-  }, [
-    isReviewHistoryHydrated,
-    reviewHistory,
-  ]);
+  }, [isReviewHistoryHydrated, reviewHistory]);
 
   useEffect(() => {
-    if (
-      selectedReviewEntryId &&
-      !entryById.has(selectedReviewEntryId)
-    ) {
+    if (selectedReviewEntryId && !entryById.has(selectedReviewEntryId)) {
       setSelectedReviewEntryId("");
       setReview(null);
     }
@@ -921,10 +780,7 @@ export function AIAssistantDrawer({
 
   useEffect(() => {
     setReview((currentReview) => {
-      if (
-        currentReview?.entryId ===
-        selectedReviewEntryId
-      ) {
+      if (currentReview?.entryId === selectedReviewEntryId) {
         return currentReview;
       }
 
@@ -935,12 +791,8 @@ export function AIAssistantDrawer({
     setCopiedLabel("");
   }, [selectedReviewEntryId]);
 
-  async function sendMessage(
-    promptOverride?: string,
-  ) {
-    const prompt = (
-      promptOverride ?? draft
-    ).trim();
+  async function sendMessage(promptOverride?: string) {
+    const prompt = (promptOverride ?? draft).trim();
 
     if (!prompt || isSending) {
       return;
@@ -952,54 +804,39 @@ export function AIAssistantDrawer({
       content: prompt,
     };
 
-    const nextMessages = [
-      ...messages,
-      userMessage,
-    ].slice(-12);
+    const nextMessages = [...messages, userMessage].slice(-12);
 
-    const contextEntries =
-      selectContextEntries(entries, prompt);
+    const contextEntries = selectContextEntries(entries, prompt);
 
     setMessages(nextMessages);
     setDraft("");
     setIsSending(true);
 
-    const controller =
-      new AbortController();
+    const controller = new AbortController();
 
     chatAbortRef.current = controller;
 
     try {
-      const response = await fetch(
-        "/api/ai-assistant",
-        {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            messages: nextMessages.map(
-              (message) => ({
-                role: message.role,
-                content: message.content,
-              }),
-            ),
-            contextEntries,
-          }),
-          signal: controller.signal,
+      const response = await fetch("/api/ai-assistant", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          messages: nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          contextEntries,
+        }),
+        signal: controller.signal,
+      });
 
-      const data =
-        (await response.json()) as AssistantResponse;
+      const data = (await response.json()) as AssistantResponse;
 
       if (!response.ok || !data.reply) {
-        throw new Error(
-          data.error ??
-            "The AI Assistant returned an error.",
-        );
+        throw new Error(data.error ?? "The AI Assistant returned an error.");
       }
 
       setModelLabel(data.model ?? "");
@@ -1010,15 +847,11 @@ export function AIAssistantDrawer({
           id: createId(),
           role: "assistant",
           content: data.reply ?? "",
-          contextEntryIds:
-            data.contextEntryIds ?? [],
+          contextEntryIds: data.contextEntryIds ?? [],
         },
       ]);
     } catch (error) {
-      if (
-        error instanceof DOMException &&
-        error.name === "AbortError"
-      ) {
+      if (error instanceof DOMException && error.name === "AbortError") {
         return;
       }
 
@@ -1041,9 +874,7 @@ export function AIAssistantDrawer({
     }
   }
 
-  function selectReviewEntry(
-    entryId: string,
-  ) {
+  function selectReviewEntry(entryId: string) {
     setSelectedReviewEntryId(entryId);
     setReview(null);
     setReviewError("");
@@ -1054,10 +885,7 @@ export function AIAssistantDrawer({
   }
 
   async function runEntryReview() {
-    if (
-      !selectedReviewEntry ||
-      isReviewing
-    ) {
+    if (!selectedReviewEntry || isReviewing) {
       return;
     }
 
@@ -1066,78 +894,50 @@ export function AIAssistantDrawer({
     setReview(null);
     setCopiedLabel("");
 
-    const controller =
-      new AbortController();
+    const controller = new AbortController();
 
     reviewAbortRef.current = controller;
 
     try {
-      const response = await fetch(
-        "/api/ai-entry-review",
-        {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            entry: compactEntry(
-              selectedReviewEntry,
-            ),
-          }),
-          signal: controller.signal,
+      const response = await fetch("/api/ai-entry-review", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          entry: compactEntry(selectedReviewEntry),
+        }),
+        signal: controller.signal,
+      });
 
-      const data =
-        (await response.json()) as ReviewResponse;
+      const data = (await response.json()) as ReviewResponse;
 
       if (!response.ok || !data.review) {
-        throw new Error(
-          data.error ??
-            "The AI entry review returned an error.",
-        );
+        throw new Error(data.error ?? "The AI entry review returned an error.");
       }
 
       setReview(data.review);
       setReviewModelLabel(data.model ?? "");
 
-      const initialDecisions =
-        createPendingDecisions(
-          data.review,
-        );
+      const initialDecisions = createPendingDecisions(data.review);
 
       const storedReview: StoredEntryReview = {
         id: createId(),
-        createdAt:
-          new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         model: data.model ?? "",
         review: data.review,
         decisions: initialDecisions,
       };
 
-      setActiveReviewHistoryId(
-        storedReview.id,
-      );
-      setReviewDecisions(
-        initialDecisions,
-      );
+      setActiveReviewHistoryId(storedReview.id);
+      setReviewDecisions(initialDecisions);
 
-      setReviewHistory(
-        (currentHistory) => [
-          storedReview,
-          ...currentHistory,
-        ].slice(
-          0,
-          REVIEW_HISTORY_LIMIT,
-        ),
+      setReviewHistory((currentHistory) =>
+        [storedReview, ...currentHistory].slice(0, REVIEW_HISTORY_LIMIT),
       );
     } catch (error) {
-      if (
-        error instanceof DOMException &&
-        error.name === "AbortError"
-      ) {
+      if (error instanceof DOMException && error.name === "AbortError") {
         return;
       }
 
@@ -1171,13 +971,8 @@ export function AIAssistantDrawer({
     });
   }
 
-  function handleComposerKeyDown(
-    event: KeyboardEvent<HTMLTextAreaElement>,
-  ) {
-    if (
-      event.key === "Enter" &&
-      !event.shiftKey
-    ) {
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void sendMessage();
     }
@@ -1190,58 +985,39 @@ export function AIAssistantDrawer({
     onOpenEntry(entry);
   }
 
-  function openContextEntry(
-    entryId: string,
-  ) {
+  function openContextEntry(entryId: string) {
     const entry = entryById.get(entryId);
 
     if (!entry) return;
     openEntry(entry);
   }
 
-  function viewStoredReview(
-    item: StoredEntryReview,
-  ) {
-    setSelectedReviewEntryId(
-      item.review.entryId,
-    );
+  function viewStoredReview(item: StoredEntryReview) {
+    setSelectedReviewEntryId(item.review.entryId);
     setReview(item.review);
-    setReviewModelLabel(
-      item.model ?? "",
-    );
+    setReviewModelLabel(item.model ?? "");
     setActiveReviewHistoryId(item.id);
-    setReviewDecisions(
-      item.decisions ??
-        createPendingDecisions(
-          item.review,
-        ),
-    );
+    setReviewDecisions(item.decisions ?? createPendingDecisions(item.review));
     setReviewError("");
     setCopiedLabel("");
   }
 
   function updateDecisionHistory(
-    nextDecisions: Record<
-      string,
-      ReviewDecision
-    >,
+    nextDecisions: Record<string, ReviewDecision>,
   ) {
     if (!activeReviewHistoryId) {
       return;
     }
 
-    setReviewHistory(
-      (currentHistory) =>
-        currentHistory.map((item) =>
-          item.id ===
-          activeReviewHistoryId
-            ? {
-                ...item,
-                decisions:
-                  nextDecisions,
-              }
-            : item,
-        ),
+    setReviewHistory((currentHistory) =>
+      currentHistory.map((item) =>
+        item.id === activeReviewHistoryId
+          ? {
+              ...item,
+              decisions: nextDecisions,
+            }
+          : item,
+      ),
     );
   }
 
@@ -1250,23 +1026,18 @@ export function AIAssistantDrawer({
     index: number,
     decision: ReviewDecision,
   ) {
-    const suggestionKey =
-      getSuggestionKey(edit, index);
+    const suggestionKey = getSuggestionKey(edit, index);
 
-    setReviewDecisions(
-      (currentDecisions) => {
-        const nextDecisions = {
-          ...currentDecisions,
-          [suggestionKey]: decision,
-        };
+    setReviewDecisions((currentDecisions) => {
+      const nextDecisions = {
+        ...currentDecisions,
+        [suggestionKey]: decision,
+      };
 
-        updateDecisionHistory(
-          nextDecisions,
-        );
+      updateDecisionHistory(nextDecisions);
 
-        return nextDecisions;
-      },
-    );
+      return nextDecisions;
+    });
   }
 
   function approveHighConfidence() {
@@ -1276,103 +1047,96 @@ export function AIAssistantDrawer({
       ...reviewDecisions,
     };
 
-    review.suggestedEdits.forEach(
-      (edit, index) => {
-        if (
-          edit.confidence === "high" &&
-          edit.suggestedValue.trim()
-        ) {
-          nextDecisions[
-            getSuggestionKey(
-              edit,
-              index,
-            )
-          ] = "approved";
-        }
-      },
-    );
+    review.suggestedEdits.forEach((edit, index) => {
+      if (edit.confidence === "high" && edit.suggestedValue.trim()) {
+        nextDecisions[getSuggestionKey(edit, index)] = "approved";
+      }
+    });
 
     setReviewDecisions(nextDecisions);
-    updateDecisionHistory(
-      nextDecisions,
-    );
+    updateDecisionHistory(nextDecisions);
   }
 
   function resetSuggestionDecisions() {
     if (!review) return;
 
-    const nextDecisions =
-      createPendingDecisions(review);
+    const nextDecisions = createPendingDecisions(review);
 
     setReviewDecisions(nextDecisions);
-    updateDecisionHistory(
-      nextDecisions,
-    );
+    updateDecisionHistory(nextDecisions);
   }
 
   function exportApprovedPlan() {
     if (!review) return;
 
-    const approvedEdits =
-      review.suggestedEdits.filter(
-        (edit, index) =>
-          reviewDecisions[
-            getSuggestionKey(
-              edit,
-              index,
-            )
-          ] === "approved",
-      );
+    const approvedEdits = review.suggestedEdits.filter(
+      (edit, index) =>
+        reviewDecisions[getSuggestionKey(edit, index)] === "approved",
+    );
 
-    const dateSlug =
-      new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-");
+    const dateSlug = new Date().toISOString().replace(/[:.]/g, "-");
 
     downloadJsonFile(
-      `yerrr-approved-ai-edits-${normalize(
-        review.entryWord,
-      ).replace(/\s+/g, "-")}-${dateSlug}.json`,
+      `yerrr-approved-ai-edits-${normalize(review.entryWord).replace(
+        /\s+/g,
+        "-",
+      )}-${dateSlug}.json`,
       {
         app: "YERRR Studio",
-        version: "Alpha 5.3",
-        exportType:
-          "approved_ai_edit_plan",
-        exportedAt:
-          new Date().toISOString(),
+        version: "Alpha 5.4",
+        exportType: "approved_ai_edit_plan",
+        exportedAt: new Date().toISOString(),
         entryId: review.entryId,
-        entryWord:
-          review.entryWord,
-        qualityScore:
-          review.qualityScore,
-        publishReadiness:
-          review.publishReadiness,
-        approvedEditCount:
-          approvedEdits.length,
+        entryWord: review.entryWord,
+        qualityScore: review.qualityScore,
+        publishReadiness: review.publishReadiness,
+        approvedEditCount: approvedEdits.length,
         approvedEdits,
-        verificationChecklist:
-          review.verificationChecklist,
-        note:
-          "This is an editorial approval plan. No Supabase changes were made.",
+        verificationChecklist: review.verificationChecklist,
+        note: "This is an editorial approval plan. No Supabase changes were made.",
       },
     );
   }
 
-  function deleteStoredReview(
-    reviewId: string,
-  ) {
-    setReviewHistory(
-      (currentHistory) =>
-        currentHistory.filter(
-          (item) =>
-            item.id !== reviewId,
-        ),
+  function exportStoredApprovedPlan(item: StoredEntryReview) {
+    const decisions = item.decisions ?? createPendingDecisions(item.review);
+
+    const approvedEdits = item.review.suggestedEdits.filter(
+      (edit, index) => decisions[getSuggestionKey(edit, index)] === "approved",
     );
 
-    if (
-      activeReviewHistoryId ===
-      reviewId
-    ) {
+    const dateSlug = new Date().toISOString().replace(/[:.]/g, "-");
+
+    downloadJsonFile(
+      `yerrr-approved-ai-edits-${normalize(item.review.entryWord).replace(
+        /\s+/g,
+        "-",
+      )}-${dateSlug}.json`,
+      {
+        app: "YERRR Studio",
+        version: "Alpha 5.4",
+        exportType: "approved_ai_edit_plan",
+        exportedAt: new Date().toISOString(),
+        sourceReviewId: item.id,
+        sourceReviewCreatedAt: item.createdAt,
+        entryId: item.review.entryId,
+        entryWord: item.review.entryWord,
+        qualityScore: item.review.qualityScore,
+        publishReadiness: item.review.publishReadiness,
+        approvedEditCount: approvedEdits.length,
+        approvedEdits,
+        verificationChecklist: item.review.verificationChecklist,
+        note: "This is an editorial handoff plan. No Supabase changes were made.",
+      },
+    );
+  }
+
+  function deleteStoredReview(reviewId: string) {
+    setReviewHistory((currentHistory) =>
+      currentHistory.filter((item) => item.id !== reviewId),
+    );
+
+    if (activeReviewHistoryId === reviewId) {
       setActiveReviewHistoryId("");
     }
   }
@@ -1388,41 +1152,25 @@ export function AIAssistantDrawer({
   }
 
   function exportReviewHistory() {
-    const dateSlug =
-      new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-");
+    const dateSlug = new Date().toISOString().replace(/[:.]/g, "-");
 
-    downloadJsonFile(
-      `yerrr-ai-review-history-${dateSlug}.json`,
-      {
-        app: "YERRR Studio",
-        version: "Alpha 5.3",
-        exportType:
-          "ai_entry_review_history",
-        exportedAt:
-          new Date().toISOString(),
-        reviewCount:
-          reviewHistory.length,
-        reviews: reviewHistory,
-      },
-    );
+    downloadJsonFile(`yerrr-ai-review-history-${dateSlug}.json`, {
+      app: "YERRR Studio",
+      version: "Alpha 5.4",
+      exportType: "ai_entry_review_history",
+      exportedAt: new Date().toISOString(),
+      reviewCount: reviewHistory.length,
+      reviews: reviewHistory,
+    });
   }
 
-  async function copyText(
-    label: string,
-    value: string,
-  ) {
+  async function copyText(label: string, value: string) {
     try {
-      await navigator.clipboard.writeText(
-        value,
-      );
+      await navigator.clipboard.writeText(value);
       setCopiedLabel(label);
 
       window.setTimeout(() => {
-        setCopiedLabel((current) =>
-          current === label ? "" : current,
-        );
+        setCopiedLabel((current) => (current === label ? "" : current));
       }, 1_800);
     } catch {
       setCopiedLabel("");
@@ -1466,10 +1214,8 @@ export function AIAssistantDrawer({
               </h2>
 
               <p className="mt-2 text-sm leading-6 text-neutral-500">
-                Chat with the lexicon or run a
-                structured editorial review. AI
-                suggestions never write to
-                Supabase automatically.
+                Chat with the lexicon or run a structured editorial review. AI
+                suggestions never write to Supabase automatically.
               </p>
             </div>
 
@@ -1519,16 +1265,13 @@ export function AIAssistantDrawer({
                 <div className="space-y-5">
                   <section className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5">
                     <p className="font-black text-yellow-100">
-                      Alpha 5.3 lexicon chat
+                      Alpha 5.4 lexicon chat
                     </p>
 
                     <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-                      Ask about definitions,
-                      examples, cultural context,
-                      editorial gaps, tone, or
-                      differences between entries.
-                      Name the relevant slang terms
-                      for the strongest grounding.
+                      Ask about definitions, examples, cultural context,
+                      editorial gaps, tone, or differences between entries. Name
+                      the relevant slang terms for the strongest grounding.
                     </p>
                   </section>
 
@@ -1538,22 +1281,16 @@ export function AIAssistantDrawer({
                     </p>
 
                     <div className="space-y-2">
-                      {QUICK_PROMPTS.map(
-                        (quickPrompt) => (
-                          <button
-                            key={quickPrompt}
-                            type="button"
-                            onClick={() =>
-                              setDraft(
-                                quickPrompt,
-                              )
-                            }
-                            className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 p-4 text-left text-sm font-bold leading-6 text-neutral-300 transition hover:border-yellow-400 hover:text-yellow-100"
-                          >
-                            {quickPrompt}
-                          </button>
-                        ),
-                      )}
+                      {QUICK_PROMPTS.map((quickPrompt) => (
+                        <button
+                          key={quickPrompt}
+                          type="button"
+                          onClick={() => setDraft(quickPrompt)}
+                          className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 p-4 text-left text-sm font-bold leading-6 text-neutral-300 transition hover:border-yellow-400 hover:text-yellow-100"
+                        >
+                          {quickPrompt}
+                        </button>
+                      ))}
                     </div>
                   </section>
 
@@ -1563,10 +1300,8 @@ export function AIAssistantDrawer({
                     </p>
 
                     <p className="mt-2 text-sm leading-6 text-neutral-400">
-                      AI output is a draft. Verify
-                      definitions, origins,
-                      cultural claims, and source
-                      quality before publishing.
+                      AI output is a draft. Verify definitions, origins,
+                      cultural claims, and source quality before publishing.
                     </p>
                   </section>
                 </div>
@@ -1601,17 +1336,14 @@ export function AIAssistantDrawer({
 
                       <div
                         className={`mt-3 whitespace-pre-wrap text-sm leading-7 ${
-                          message.isError
-                            ? "text-red-100"
-                            : "text-neutral-200"
+                          message.isError ? "text-red-100" : "text-neutral-200"
                         }`}
                       >
                         {message.content}
                       </div>
 
                       {message.contextEntryIds &&
-                        message.contextEntryIds
-                          .length > 0 && (
+                        message.contextEntryIds.length > 0 && (
                           <div className="mt-4 border-t border-neutral-800 pt-4">
                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600">
                               Context used
@@ -1620,33 +1352,24 @@ export function AIAssistantDrawer({
                             <div className="mt-2 flex flex-wrap gap-2">
                               {message.contextEntryIds
                                 .slice(0, 12)
-                                .map(
-                                  (entryId) => {
-                                    const entry =
-                                      entryById.get(
-                                        entryId,
-                                      );
+                                .map((entryId) => {
+                                  const entry = entryById.get(entryId);
 
-                                    if (!entry) {
-                                      return null;
-                                    }
+                                  if (!entry) {
+                                    return null;
+                                  }
 
-                                    return (
-                                      <button
-                                        key={entryId}
-                                        type="button"
-                                        onClick={() =>
-                                          openContextEntry(
-                                            entryId,
-                                          )
-                                        }
-                                        className="rounded-full border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs font-bold text-neutral-300 hover:border-yellow-400 hover:text-yellow-200"
-                                      >
-                                        {entry.word}
-                                      </button>
-                                    );
-                                  },
-                                )}
+                                  return (
+                                    <button
+                                      key={entryId}
+                                      type="button"
+                                      onClick={() => openContextEntry(entryId)}
+                                      className="rounded-full border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs font-bold text-neutral-300 hover:border-yellow-400 hover:text-yellow-200"
+                                    >
+                                      {entry.word}
+                                    </button>
+                                  );
+                                })}
                             </div>
                           </div>
                         )}
@@ -1659,8 +1382,7 @@ export function AIAssistantDrawer({
                         <span className="h-4 w-4 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
 
                         <p className="text-sm font-bold text-neutral-300">
-                          Reviewing lexicon
-                          context...
+                          Reviewing lexicon context...
                         </p>
                       </div>
                     </div>
@@ -1698,12 +1420,8 @@ export function AIAssistantDrawer({
                 <textarea
                   ref={textareaRef}
                   value={draft}
-                  onChange={(event) =>
-                    setDraft(event.target.value)
-                  }
-                  onKeyDown={
-                    handleComposerKeyDown
-                  }
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={handleComposerKeyDown}
                   rows={3}
                   maxLength={2_500}
                   placeholder="Ask about an entry, compare terms, or request editorial help..."
@@ -1712,8 +1430,7 @@ export function AIAssistantDrawer({
 
                 <div className="flex items-center justify-between gap-3 px-2 pb-1">
                   <p className="text-[10px] text-neutral-600">
-                    Enter sends · Shift+Enter adds
-                    a line
+                    Enter sends · Shift+Enter adds a line
                   </p>
 
                   {isSending ? (
@@ -1727,9 +1444,7 @@ export function AIAssistantDrawer({
                   ) : (
                     <button
                       type="button"
-                      onClick={() =>
-                        void sendMessage()
-                      }
+                      onClick={() => void sendMessage()}
                       disabled={!draft.trim()}
                       className="rounded-xl bg-yellow-400 px-4 py-2 text-xs font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -1745,32 +1460,33 @@ export function AIAssistantDrawer({
             <div className="space-y-5">
               <section className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5">
                 <p className="font-black text-yellow-100">
-                  Alpha 5.3 structured entry
-                  review
+                  Alpha 5.4 editorial review queue
                 </p>
 
                 <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-                  Select one lexicon entry. The AI
-                  will score editorial completeness,
-                  identify issues, and propose careful
-                  revisions. Approve or reject each
-                  suggestion before handing the plan
-                  to the Entry Editor. Nothing writes
-                  to Supabase automatically.
+                  Review one entry at a time, approve or reject suggestions,
+                  then track every report in the AI editorial queue. Ready plans
+                  can be copied or exported for manual verification in the Entry
+                  Editor. Nothing writes to Supabase automatically.
                 </p>
               </section>
 
-              <details className="group rounded-3xl border border-neutral-800 bg-neutral-900">
+              <details
+                open
+                className="group rounded-3xl border border-neutral-800 bg-neutral-900"
+              >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5">
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
-                      Local review history
+                      AI editorial queue
                     </p>
                     <p className="mt-2 text-lg font-black text-white">
-                      {reviewHistory.length} saved review{reviewHistory.length === 1 ? "" : "s"}
+                      {reviewHistory.length} saved review
+                      {reviewHistory.length === 1 ? "" : "s"}
                     </p>
                     <p className="mt-1 text-sm text-neutral-500">
-                      Successful reviews are saved in this browser only.
+                      Track pending decisions and approved plans across every
+                      reviewed entry.
                     </p>
                   </div>
 
@@ -1780,14 +1496,48 @@ export function AIAssistantDrawer({
                 </summary>
 
                 <div className="border-t border-neutral-800 p-5">
-                  <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-yellow-100/60">
+                        Needs decisions
+                      </p>
+                      <p className="mt-2 text-2xl font-black text-yellow-100">
+                        {reviewQueueSummary.needsDecisions}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-green-100/60">
+                        Ready plans
+                      </p>
+                      <p className="mt-2 text-2xl font-black text-green-100">
+                        {reviewQueueSummary.readyPlans}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-500">
+                        Approved edits
+                      </p>
+                      <p className="mt-2 text-2xl font-black text-white">
+                        {reviewQueueSummary.approvedEdits}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-100/60">
+                        Rejected edits
+                      </p>
+                      <p className="mt-2 text-2xl font-black text-red-100">
+                        {reviewQueueSummary.rejectedEdits}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                     <input
                       value={historyQuery}
-                      onChange={(event) =>
-                        setHistoryQuery(
-                          event.target.value,
-                        )
-                      }
+                      onChange={(event) => setHistoryQuery(event.target.value)}
                       placeholder="Search saved reviews..."
                       className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
                     />
@@ -1798,7 +1548,7 @@ export function AIAssistantDrawer({
                       disabled={reviewHistory.length === 0}
                       className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Export JSON
+                      Export queue
                     </button>
 
                     <button
@@ -1811,92 +1561,179 @@ export function AIAssistantDrawer({
                     </button>
                   </div>
 
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {(
+                      [
+                        ["all", "All"],
+                        ["needs_decisions", "Needs decisions"],
+                        ["ready", "Ready"],
+                        ["has_rejections", "Has rejections"],
+                      ] as Array<[ReviewQueueFilter, string]>
+                    ).map(([filter, label]) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setHistoryFilter(filter)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-black ${
+                          historyFilter === filter
+                            ? "border-yellow-400 bg-yellow-400 text-black"
+                            : "border-neutral-700 bg-neutral-950 text-neutral-400 hover:border-yellow-400 hover:text-yellow-200"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
                   {filteredReviewHistory.length === 0 ? (
                     <div className="mt-4 rounded-2xl border border-dashed border-neutral-700 p-5 text-sm text-neutral-500">
                       {reviewHistory.length === 0
-                        ? "Run an entry review to create the first saved report."
-                        : "No saved reviews match this search."}
+                        ? "Run an entry review to create the first editorial queue item."
+                        : "No saved reviews match this search and filter."}
                     </div>
                   ) : (
                     <div className="mt-4 space-y-3">
-                      {filteredReviewHistory.map(
-                        (item) => (
+                      {filteredReviewHistory.map((item) => {
+                        const counts = getStoredDecisionCounts(item);
+
+                        const decisions =
+                          item.decisions ?? createPendingDecisions(item.review);
+
+                        const copyKey = `history-approved-${item.id}`;
+
+                        const isReady =
+                          counts.approved > 0 && counts.pending === 0;
+
+                        return (
                           <article
                             key={item.id}
-                            className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                            className={`rounded-2xl border p-4 ${
+                              isReady
+                                ? "border-green-400/30 bg-green-400/5"
+                                : counts.pending > 0
+                                  ? "border-yellow-400/20 bg-yellow-400/5"
+                                  : "border-neutral-800 bg-neutral-950"
+                            }`}
                           >
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                              <div>
-                                <p className="text-lg font-black text-white">
-                                  {item.review.entryWord}
-                                </p>
+                            <div className="flex flex-col gap-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-lg font-black text-white">
+                                      {item.review.entryWord}
+                                    </p>
 
-                                <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-neutral-500">
-                                  {item.review.qualityScore}/100 · {readinessLabel(item.review.publishReadiness)}
-                                </p>
+                                    <span
+                                      className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${
+                                        isReady
+                                          ? "border-green-400/30 bg-green-400/10 text-green-100"
+                                          : counts.pending > 0
+                                            ? "border-yellow-400/30 bg-yellow-400/10 text-yellow-100"
+                                            : "border-neutral-700 bg-neutral-900 text-neutral-400"
+                                      }`}
+                                    >
+                                      {isReady
+                                        ? "Ready for editor"
+                                        : counts.pending > 0
+                                          ? "Needs decisions"
+                                          : "No approved plan"}
+                                    </span>
+                                  </div>
 
-                                <p className="mt-2 text-xs text-neutral-600">
-                                  {formatReviewDate(item.createdAt)}
-                                </p>
-
-                                {item.decisions && (
-                                  <p className="mt-2 text-xs font-bold text-green-300">
-                                    {
-                                      Object.values(
-                                        item.decisions,
-                                      ).filter(
-                                        (decision) =>
-                                          decision ===
-                                          "approved",
-                                      ).length
-                                    } approved change{
-                                      Object.values(
-                                        item.decisions,
-                                      ).filter(
-                                        (decision) =>
-                                          decision ===
-                                          "approved",
-                                      ).length === 1
-                                        ? ""
-                                        : "s"
-                                    }
+                                  <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-neutral-500">
+                                    {item.review.qualityScore}/100 ·{" "}
+                                    {readinessLabel(
+                                      item.review.publishReadiness,
+                                    )}
                                   </p>
-                                )}
 
-                                <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-400">
-                                  {item.review.summary}
-                                </p>
+                                  <p className="mt-2 text-xs text-neutral-600">
+                                    {formatReviewDate(item.createdAt)}
+                                  </p>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                  <div className="rounded-xl border border-green-400/20 bg-green-400/10 px-3 py-2">
+                                    <p className="text-[9px] font-black uppercase tracking-[0.12em] text-green-100/60">
+                                      Approved
+                                    </p>
+                                    <p className="mt-1 font-black text-green-100">
+                                      {counts.approved}
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-3 py-2">
+                                    <p className="text-[9px] font-black uppercase tracking-[0.12em] text-yellow-100/60">
+                                      Pending
+                                    </p>
+                                    <p className="mt-1 font-black text-yellow-100">
+                                      {counts.pending}
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2">
+                                    <p className="text-[9px] font-black uppercase tracking-[0.12em] text-red-100/60">
+                                      Rejected
+                                    </p>
+                                    <p className="mt-1 font-black text-red-100">
+                                      {counts.rejected}
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
 
-                              <div className="flex shrink-0 flex-wrap gap-2">
+                              <p className="line-clamp-2 text-sm leading-6 text-neutral-400">
+                                {item.review.summary}
+                              </p>
+
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => viewStoredReview(item)}
+                                  className="rounded-xl bg-yellow-400 px-3 py-2 text-xs font-black text-black hover:bg-yellow-300"
+                                >
+                                  Review decisions
+                                </button>
+
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    viewStoredReview(
-                                      item,
+                                    void copyText(
+                                      copyKey,
+                                      formatApprovedEditsAsText(
+                                        item.review,
+                                        decisions,
+                                      ),
                                     )
                                   }
-                                  className="rounded-xl bg-yellow-400 px-3 py-2 text-xs font-black text-black hover:bg-yellow-300"
+                                  disabled={counts.approved === 0}
+                                  className="rounded-xl border border-green-400/20 bg-green-400/10 px-3 py-2 text-xs font-black text-green-100 hover:bg-green-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                  View
+                                  {copiedLabel === copyKey
+                                    ? "Plan copied"
+                                    : "Copy plan"}
                                 </button>
 
-                                {entryById.has(
-                                  item.review.entryId,
-                                ) &&
+                                <button
+                                  type="button"
+                                  onClick={() => exportStoredApprovedPlan(item)}
+                                  disabled={counts.approved === 0}
+                                  className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  Export plan
+                                </button>
+
+                                {entryById.has(item.review.entryId) &&
                                   onOpenEntry && (
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const entry =
-                                          entryById.get(
-                                            item.review.entryId,
-                                          );
+                                        const entry = entryById.get(
+                                          item.review.entryId,
+                                        );
 
                                         if (entry) {
-                                          openEntry(
-                                            entry,
-                                          );
+                                          openEntry(entry);
                                         }
                                       }}
                                       className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200"
@@ -1907,11 +1744,7 @@ export function AIAssistantDrawer({
 
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    deleteStoredReview(
-                                      item.id,
-                                    )
-                                  }
+                                  onClick={() => deleteStoredReview(item.id)}
                                   className="rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 hover:bg-red-400/20"
                                 >
                                   Delete
@@ -1919,8 +1752,8 @@ export function AIAssistantDrawer({
                               </div>
                             </div>
                           </article>
-                        ),
-                      )}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1933,11 +1766,7 @@ export function AIAssistantDrawer({
 
                 <input
                   value={reviewQuery}
-                  onChange={(event) =>
-                    setReviewQuery(
-                      event.target.value,
-                    )
-                  }
+                  onChange={(event) => setReviewQuery(event.target.value)}
                   placeholder="Search brick, deadass, ocky..."
                   className="mt-3 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
                 />
@@ -1948,31 +1777,21 @@ export function AIAssistantDrawer({
 
                 <select
                   value={selectedReviewEntryId}
-                  onChange={(event) =>
-                    selectReviewEntry(
-                      event.target.value,
-                    )
-                  }
+                  onChange={(event) => selectReviewEntry(event.target.value)}
                   className="mt-3 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none focus:border-yellow-400"
                 >
-                  <option value="">
-                    Select an entry...
-                  </option>
+                  <option value="">Select an entry...</option>
 
-                  {filteredReviewEntries.map(
-                    (entry) => (
-                      <option
-                        key={String(entry.id)}
-                        value={String(entry.id)}
-                      >
-                        {entry.word} · {entry.status}
-                      </option>
-                    ),
-                  )}
+                  {filteredReviewEntries.map((entry) => (
+                    <option key={String(entry.id)} value={String(entry.id)}>
+                      {entry.word} · {entry.status}
+                    </option>
+                  ))}
                 </select>
 
                 <p className="mt-2 text-xs text-neutral-600">
-                  {filteredReviewEntries.length} of {entries.length} entries shown
+                  {filteredReviewEntries.length} of {entries.length} entries
+                  shown
                 </p>
 
                 {selectedReviewEntry && (
@@ -1984,18 +1803,16 @@ export function AIAssistantDrawer({
                         </p>
 
                         <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">
-                          {selectedReviewEntry.status} · {selectedReviewEntry.meanings.length} meaning{selectedReviewEntry.meanings.length === 1 ? "" : "s"}
+                          {selectedReviewEntry.status} ·{" "}
+                          {selectedReviewEntry.meanings.length} meaning
+                          {selectedReviewEntry.meanings.length === 1 ? "" : "s"}
                         </p>
                       </div>
 
                       {onOpenEntry && (
                         <button
                           type="button"
-                          onClick={() =>
-                            openEntry(
-                              selectedReviewEntry,
-                            )
-                          }
+                          onClick={() => openEntry(selectedReviewEntry)}
                           className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200"
                         >
                           Open entry
@@ -2017,9 +1834,7 @@ export function AIAssistantDrawer({
                   ) : (
                     <button
                       type="button"
-                      onClick={() =>
-                        void runEntryReview()
-                      }
+                      onClick={() => void runEntryReview()}
                       disabled={!selectedReviewEntry}
                       className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -2039,10 +1854,8 @@ export function AIAssistantDrawer({
                         Reviewing entry...
                       </p>
                       <p className="mt-1 text-sm text-neutral-500">
-                        Checking clarity,
-                        completeness, examples,
-                        context, and verification
-                        needs.
+                        Checking clarity, completeness, examples, context, and
+                        verification needs.
                       </p>
                     </div>
                   </div>
@@ -2088,9 +1901,7 @@ export function AIAssistantDrawer({
 
                     <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-neutral-800 pt-4">
                       <span className="rounded-full border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs font-black text-neutral-300">
-                        {readinessLabel(
-                          review.publishReadiness,
-                        )}
+                        {readinessLabel(review.publishReadiness)}
                       </span>
 
                       {reviewModelLabel && (
@@ -2104,15 +1915,12 @@ export function AIAssistantDrawer({
                         onClick={() =>
                           void copyText(
                             "full-review",
-                            formatReviewAsText(
-                              review,
-                            ),
+                            formatReviewAsText(review),
                           )
                         }
                         className="ml-auto rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200"
                       >
-                        {copiedLabel ===
-                        "full-review"
+                        {copiedLabel === "full-review"
                           ? "Copied"
                           : "Copy full review"}
                       </button>
@@ -2126,26 +1934,21 @@ export function AIAssistantDrawer({
 
                     {review.strengths.length > 0 ? (
                       <div className="mt-4 space-y-3">
-                        {review.strengths.map(
-                          (strength, index) => (
-                            <div
-                              key={`${strength}-${index}`}
-                              className="flex gap-3 rounded-2xl border border-green-400/20 bg-green-400/10 p-4"
-                            >
-                              <span className="font-black text-green-300">
-                                ✓
-                              </span>
-                              <p className="text-sm leading-6 text-green-50">
-                                {strength}
-                              </p>
-                            </div>
-                          ),
-                        )}
+                        {review.strengths.map((strength, index) => (
+                          <div
+                            key={`${strength}-${index}`}
+                            className="flex gap-3 rounded-2xl border border-green-400/20 bg-green-400/10 p-4"
+                          >
+                            <span className="font-black text-green-300">✓</span>
+                            <p className="text-sm leading-6 text-green-50">
+                              {strength}
+                            </p>
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <p className="mt-3 text-sm text-neutral-500">
-                        No clear strengths were
-                        identified yet.
+                        No clear strengths were identified yet.
                       </p>
                     )}
                   </section>
@@ -2157,41 +1960,36 @@ export function AIAssistantDrawer({
 
                     {review.issues.length > 0 ? (
                       <div className="mt-4 space-y-3">
-                        {review.issues.map(
-                          (issue, index) => (
-                            <article
-                              key={`${issue.category}-${index}`}
-                              className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-full border border-neutral-700 px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] text-neutral-300">
-                                  {titleCaseToken(
-                                    issue.category,
-                                  )}
-                                </span>
-                                <span
-                                  className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${severityClasses(
-                                    issue.severity,
-                                  )}`}
-                                >
-                                  {issue.severity}
-                                </span>
-                              </div>
+                        {review.issues.map((issue, index) => (
+                          <article
+                            key={`${issue.category}-${index}`}
+                            className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-neutral-700 px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] text-neutral-300">
+                                {titleCaseToken(issue.category)}
+                              </span>
+                              <span
+                                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${severityClasses(
+                                  issue.severity,
+                                )}`}
+                              >
+                                {issue.severity}
+                              </span>
+                            </div>
 
-                              <p className="mt-4 text-sm font-bold leading-6 text-white">
-                                {issue.finding}
-                              </p>
-                              <p className="mt-2 text-sm leading-6 text-neutral-400">
-                                {issue.recommendation}
-                              </p>
-                            </article>
-                          ),
-                        )}
+                            <p className="mt-4 text-sm font-bold leading-6 text-white">
+                              {issue.finding}
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-neutral-400">
+                              {issue.recommendation}
+                            </p>
+                          </article>
+                        ))}
                       </div>
                     ) : (
                       <p className="mt-3 text-sm text-neutral-500">
-                        No major editorial issues
-                        were identified.
+                        No major editorial issues were identified.
                       </p>
                     )}
                   </section>
@@ -2203,7 +2001,8 @@ export function AIAssistantDrawer({
                           Suggestion approval
                         </p>
                         <p className="mt-2 text-sm leading-6 text-neutral-400">
-                          Review each proposed edit before creating an editorial handoff plan.
+                          Review each proposed edit before creating an editorial
+                          handoff plan.
                         </p>
                       </div>
 
@@ -2211,9 +2010,7 @@ export function AIAssistantDrawer({
                         <button
                           type="button"
                           onClick={approveHighConfidence}
-                          disabled={
-                            review.suggestedEdits.length === 0
-                          }
+                          disabled={review.suggestedEdits.length === 0}
                           className="rounded-xl border border-green-400/20 bg-green-400/10 px-3 py-2 text-xs font-black text-green-100 hover:bg-green-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Approve high confidence
@@ -2222,9 +2019,7 @@ export function AIAssistantDrawer({
                         <button
                           type="button"
                           onClick={resetSuggestionDecisions}
-                          disabled={
-                            review.suggestedEdits.length === 0
-                          }
+                          disabled={review.suggestedEdits.length === 0}
                           className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Reset decisions
@@ -2267,19 +2062,13 @@ export function AIAssistantDrawer({
                         onClick={() =>
                           void copyText(
                             "approved-plan",
-                            formatApprovedEditsAsText(
-                              review,
-                              reviewDecisions,
-                            ),
+                            formatApprovedEditsAsText(review, reviewDecisions),
                           )
                         }
-                        disabled={
-                          reviewDecisionCounts.approved === 0
-                        }
+                        disabled={reviewDecisionCounts.approved === 0}
                         className="rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {copiedLabel ===
-                        "approved-plan"
+                        {copiedLabel === "approved-plan"
                           ? "Approved plan copied"
                           : "Copy approved plan"}
                       </button>
@@ -2287,9 +2076,7 @@ export function AIAssistantDrawer({
                       <button
                         type="button"
                         onClick={exportApprovedPlan}
-                        disabled={
-                          reviewDecisionCounts.approved === 0
-                        }
+                        disabled={reviewDecisionCounts.approved === 0}
                         className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Export approved plan
@@ -2298,173 +2085,147 @@ export function AIAssistantDrawer({
 
                     {review.suggestedEdits.length > 0 ? (
                       <div className="mt-4 space-y-4">
-                        {review.suggestedEdits.map(
-                          (edit, index) => {
-                            const copyKey =
-                              `edit-${index}`;
-                            const suggestionKey =
-                              getSuggestionKey(
-                                edit,
-                                index,
-                              );
-                            const decision =
-                              reviewDecisions[
-                                suggestionKey
-                              ] ?? "pending";
+                        {review.suggestedEdits.map((edit, index) => {
+                          const copyKey = `edit-${index}`;
+                          const suggestionKey = getSuggestionKey(edit, index);
+                          const decision =
+                            reviewDecisions[suggestionKey] ?? "pending";
 
-                            const decisionClasses =
-                              decision ===
-                              "approved"
-                                ? "border-green-400/30 bg-green-400/5"
-                                : decision ===
-                                    "rejected"
-                                  ? "border-red-400/20 bg-red-400/5 opacity-70"
-                                  : "border-neutral-800 bg-neutral-950";
+                          const decisionClasses =
+                            decision === "approved"
+                              ? "border-green-400/30 bg-green-400/5"
+                              : decision === "rejected"
+                                ? "border-red-400/20 bg-red-400/5 opacity-70"
+                                : "border-neutral-800 bg-neutral-950";
 
-                            return (
-                              <article
-                                key={`${edit.field}-${index}`}
-                                className={`rounded-2xl border p-4 ${decisionClasses}`}
-                              >
-                                <div className="flex items-start justify-between gap-4">
-                                  <div>
-                                    <p className="font-black text-white">
-                                      {titleCaseToken(
-                                        edit.field,
-                                      )}
-                                    </p>
-                                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.15em] text-neutral-600">
-                                      {edit.confidence} confidence
-                                    </p>
+                          return (
+                            <article
+                              key={`${edit.field}-${index}`}
+                              className={`rounded-2xl border p-4 ${decisionClasses}`}
+                            >
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <p className="font-black text-white">
+                                    {titleCaseToken(edit.field)}
+                                  </p>
+                                  <p className="mt-1 text-xs font-bold uppercase tracking-[0.15em] text-neutral-600">
+                                    {edit.confidence} confidence
+                                  </p>
 
-                                    <span
-                                      className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${
-                                        decision ===
-                                        "approved"
-                                          ? "border-green-400/30 bg-green-400/10 text-green-100"
-                                          : decision ===
-                                              "rejected"
-                                            ? "border-red-400/30 bg-red-400/10 text-red-100"
-                                            : "border-neutral-700 bg-neutral-900 text-neutral-400"
-                                      }`}
-                                    >
-                                      {decision}
-                                    </span>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void copyText(
-                                        copyKey,
-                                        edit.suggestedValue,
-                                      )
-                                    }
-                                    disabled={
-                                      !edit.suggestedValue
-                                    }
-                                    className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
-                                  >
-                                    {copiedLabel ===
-                                    copyKey
-                                      ? "Copied"
-                                      : "Copy suggestion"}
-                                  </button>
-                                </div>
-
-                                <div className="mt-4 grid gap-3">
-                                  <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600">
-                                      Current
-                                    </p>
-                                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-400">
-                                      {edit.currentValue ||
-                                        "Empty"}
-                                    </p>
-                                  </div>
-
-                                  <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-100/60">
-                                      Suggested
-                                    </p>
-                                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-yellow-50">
-                                      {edit.suggestedValue ||
-                                        "No replacement proposed; verify this field manually."}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="mt-4 grid grid-cols-3 gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setSuggestionDecision(
-                                        edit,
-                                        index,
-                                        "approved",
-                                      )
-                                    }
-                                    className={`rounded-xl border px-3 py-2 text-xs font-black ${
-                                      decision ===
-                                      "approved"
-                                        ? "border-green-400 bg-green-400 text-black"
-                                        : "border-green-400/20 bg-green-400/10 text-green-100 hover:bg-green-400/20"
+                                  <span
+                                    className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${
+                                      decision === "approved"
+                                        ? "border-green-400/30 bg-green-400/10 text-green-100"
+                                        : decision === "rejected"
+                                          ? "border-red-400/30 bg-red-400/10 text-red-100"
+                                          : "border-neutral-700 bg-neutral-900 text-neutral-400"
                                     }`}
                                   >
-                                    Approve
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setSuggestionDecision(
-                                        edit,
-                                        index,
-                                        "rejected",
-                                      )
-                                    }
-                                    className={`rounded-xl border px-3 py-2 text-xs font-black ${
-                                      decision ===
-                                      "rejected"
-                                        ? "border-red-400 bg-red-400 text-black"
-                                        : "border-red-400/20 bg-red-400/10 text-red-100 hover:bg-red-400/20"
-                                    }`}
-                                  >
-                                    Reject
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setSuggestionDecision(
-                                        edit,
-                                        index,
-                                        "pending",
-                                      )
-                                    }
-                                    className={`rounded-xl border px-3 py-2 text-xs font-black ${
-                                      decision ===
-                                      "pending"
-                                        ? "border-neutral-500 bg-neutral-700 text-white"
-                                        : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-white"
-                                    }`}
-                                  >
-                                    Pending
-                                  </button>
+                                    {decision}
+                                  </span>
                                 </div>
 
-                                <p className="mt-3 text-sm leading-6 text-neutral-500">
-                                  {edit.reason}
-                                </p>
-                              </article>
-                            );
-                          },
-                        )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void copyText(copyKey, edit.suggestedValue)
+                                  }
+                                  disabled={!edit.suggestedValue}
+                                  className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  {copiedLabel === copyKey
+                                    ? "Copied"
+                                    : "Copy suggestion"}
+                                </button>
+                              </div>
+
+                              <div className="mt-4 grid gap-3">
+                                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600">
+                                    Current
+                                  </p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-400">
+                                    {edit.currentValue || "Empty"}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3">
+                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-100/60">
+                                    Suggested
+                                  </p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-yellow-50">
+                                    {edit.suggestedValue ||
+                                      "No replacement proposed; verify this field manually."}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 grid grid-cols-3 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSuggestionDecision(
+                                      edit,
+                                      index,
+                                      "approved",
+                                    )
+                                  }
+                                  className={`rounded-xl border px-3 py-2 text-xs font-black ${
+                                    decision === "approved"
+                                      ? "border-green-400 bg-green-400 text-black"
+                                      : "border-green-400/20 bg-green-400/10 text-green-100 hover:bg-green-400/20"
+                                  }`}
+                                >
+                                  Approve
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSuggestionDecision(
+                                      edit,
+                                      index,
+                                      "rejected",
+                                    )
+                                  }
+                                  className={`rounded-xl border px-3 py-2 text-xs font-black ${
+                                    decision === "rejected"
+                                      ? "border-red-400 bg-red-400 text-black"
+                                      : "border-red-400/20 bg-red-400/10 text-red-100 hover:bg-red-400/20"
+                                  }`}
+                                >
+                                  Reject
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSuggestionDecision(
+                                      edit,
+                                      index,
+                                      "pending",
+                                    )
+                                  }
+                                  className={`rounded-xl border px-3 py-2 text-xs font-black ${
+                                    decision === "pending"
+                                      ? "border-neutral-500 bg-neutral-700 text-white"
+                                      : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-white"
+                                  }`}
+                                >
+                                  Pending
+                                </button>
+                              </div>
+
+                              <p className="mt-3 text-sm leading-6 text-neutral-500">
+                                {edit.reason}
+                              </p>
+                            </article>
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="mt-3 text-sm text-neutral-500">
-                        No direct text replacements
-                        were proposed.
+                        No direct text replacements were proposed.
                       </p>
                     )}
                   </section>
@@ -2476,26 +2237,21 @@ export function AIAssistantDrawer({
 
                     {review.verificationChecklist.length > 0 ? (
                       <div className="mt-4 space-y-3">
-                        {review.verificationChecklist.map(
-                          (item, index) => (
-                            <div
-                              key={`${item}-${index}`}
-                              className="flex gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
-                            >
-                              <span className="text-neutral-600">
-                                □
-                              </span>
-                              <p className="text-sm leading-6 text-neutral-300">
-                                {item}
-                              </p>
-                            </div>
-                          ),
-                        )}
+                        {review.verificationChecklist.map((item, index) => (
+                          <div
+                            key={`${item}-${index}`}
+                            className="flex gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                          >
+                            <span className="text-neutral-600">□</span>
+                            <p className="text-sm leading-6 text-neutral-300">
+                              {item}
+                            </p>
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <p className="mt-3 text-sm text-neutral-500">
-                        No additional verification
-                        steps were listed.
+                        No additional verification steps were listed.
                       </p>
                     )}
                   </section>
@@ -2505,13 +2261,10 @@ export function AIAssistantDrawer({
                       Human approval required
                     </p>
                     <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-                      Approval decisions and
-                      exported plans are editorial
-                      handoff tools only. They are
-                      stored locally and never edit
-                      Supabase. Open the Entry Editor,
-                      verify every approved change,
-                      then save manually.
+                      Approval decisions and exported plans are editorial
+                      handoff tools only. They are stored locally and never edit
+                      Supabase. Open the Entry Editor, verify every approved
+                      change, then save manually.
                     </p>
                   </section>
                 </>
