@@ -13,19 +13,11 @@ type AdvancedSearchDrawerProps = {
 };
 
 type SearchScope =
-  | "all"
-  | "word"
-  | "definition"
-  | "example"
-  | "culture";
+  "all" | "word" | "definition" | "example" | "culture" | "graph";
 
 type MatchMode = "all" | "any" | "phrase";
 
-type SortMode =
-  | "relevance"
-  | "a-z"
-  | "z-a"
-  | "status";
+type SortMode = "relevance" | "a-z" | "z-a" | "status";
 
 type PresenceFilter = "all" | "with" | "without";
 
@@ -48,11 +40,20 @@ type SearchDocument = {
 };
 
 type SearchMatchType =
-  | "exact"
-  | "alternate"
-  | "prefix"
-  | "full_text"
-  | "fuzzy";
+  "exact" | "alternate" | "prefix" | "full_text" | "fuzzy" | "graph";
+
+type GraphConcept = {
+  id: string;
+  name: string;
+  description: string;
+};
+
+type GraphRelationship = {
+  relatedEntryId: string;
+  relatedWord: string;
+  relationshipType: string;
+  direction: string;
+};
 
 type RankedResult = SearchDocument & {
   score: number;
@@ -60,8 +61,12 @@ type RankedResult = SearchDocument & {
   databaseOrder?: number;
   fullTextRank?: number;
   fuzzyRank?: number;
+  graphRank?: number;
   matchType?: SearchMatchType;
   headline?: string;
+  concepts: GraphConcept[];
+  relationships: GraphRelationship[];
+  matchReasons: string[];
 };
 
 type SupabaseSearchRow = {
@@ -74,8 +79,12 @@ type SupabaseSearchRow = {
   rank: number;
   full_text_rank: number;
   fuzzy_rank: number;
+  graph_rank: number;
   match_type: SearchMatchType;
   headline: string;
+  concepts: unknown;
+  relationships: unknown;
+  match_reasons: unknown;
 };
 
 type SearchSource = "local" | "supabase" | "fallback";
@@ -105,15 +114,13 @@ const DEFAULT_PART_OF_SPEECH_OPTIONS = [
 ];
 
 function normalizeFieldKey(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function collectStrings(
   value: unknown,
   output: string[] = [],
-  seen = new Set<object>()
+  seen = new Set<object>(),
 ) {
   if (typeof value === "string") {
     if (value.trim()) {
@@ -123,10 +130,7 @@ function collectStrings(
     return output;
   }
 
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "number" || typeof value === "boolean") {
     output.push(String(value));
     return output;
   }
@@ -142,27 +146,18 @@ function collectStrings(
   seen.add(value);
 
   if (Array.isArray(value)) {
-    value.forEach((item) =>
-      collectStrings(item, output, seen)
-    );
+    value.forEach((item) => collectStrings(item, output, seen));
 
     return output;
   }
 
-  Object.values(value).forEach((item) =>
-    collectStrings(item, output, seen)
-  );
+  Object.values(value).forEach((item) => collectStrings(item, output, seen));
 
   return output;
 }
 
-function collectFieldValues(
-  source: unknown,
-  aliases: string[]
-) {
-  const wantedKeys = new Set(
-    aliases.map(normalizeFieldKey)
-  );
+function collectFieldValues(source: unknown, aliases: string[]) {
+  const wantedKeys = new Set(aliases.map(normalizeFieldKey));
 
   const values: string[] = [];
   const visited = new Set<object>();
@@ -183,17 +178,15 @@ function collectFieldValues(
       return;
     }
 
-    Object.entries(
-      value as Record<string, unknown>
-    ).forEach(([key, childValue]) => {
-      if (
-        wantedKeys.has(normalizeFieldKey(key))
-      ) {
-        collectStrings(childValue, values);
-      }
+    Object.entries(value as Record<string, unknown>).forEach(
+      ([key, childValue]) => {
+        if (wantedKeys.has(normalizeFieldKey(key))) {
+          collectStrings(childValue, values);
+        }
 
-      walk(childValue);
-    });
+        walk(childValue);
+      },
+    );
   }
 
   walk(source);
@@ -218,28 +211,18 @@ function uniqueValues(values: string[]) {
     }
   });
 
-  return Array.from(valueMap.values()).sort(
-    (a, b) => a.localeCompare(b)
-  );
+  return Array.from(valueMap.values()).sort((a, b) => a.localeCompare(b));
 }
 
-function getFieldText(
-  entry: Entry,
-  aliases: string[]
-) {
-  return uniqueValues(
-    collectFieldValues(entry, aliases)
-  ).join(" ");
+function getFieldText(entry: Entry, aliases: string[]) {
+  return uniqueValues(collectFieldValues(entry, aliases)).join(" ");
 }
 
 function getPartOfSpeechValues(entry: Entry) {
-  const entryRecord =
-    entry as unknown as Record<string, unknown>;
+  const entryRecord = entry as unknown as Record<string, unknown>;
 
   const searchableSource = {
-    meanings: Array.isArray(entry.meanings)
-      ? entry.meanings
-      : [],
+    meanings: Array.isArray(entry.meanings) ? entry.meanings : [],
     partOfSpeech: entryRecord.partOfSpeech,
     part_of_speech: entryRecord.part_of_speech,
     partsOfSpeech: entryRecord.partsOfSpeech,
@@ -262,23 +245,17 @@ function getPartOfSpeechValues(entry: Entry) {
       value
         .split(/[,;|/\n]+/g)
         .map((part) => part.trim())
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   );
 }
 
-function createSearchDocument(
-  entry: Entry
-): SearchDocument {
+function createSearchDocument(entry: Entry): SearchDocument {
   const word = String(entry.word ?? "");
   const slug = String(entry.slug ?? "");
-  const pronunciation = String(
-    entry.pronunciation ?? ""
-  );
+  const pronunciation = String(entry.pronunciation ?? "");
 
-  const alternateSpellings = String(
-    entry.alternateSpellings ?? ""
-  );
+  const alternateSpellings = String(entry.alternateSpellings ?? "");
 
   const definitions = getFieldText(entry, [
     "definition",
@@ -310,10 +287,7 @@ function createSearchDocument(
     "culture",
   ]);
 
-  const tones = getFieldText(entry, [
-    "tone",
-    "tones",
-  ]);
+  const tones = getFieldText(entry, ["tone", "tones"]);
 
   const usageFrequency = getFieldText(entry, [
     "usageFrequency",
@@ -321,8 +295,7 @@ function createSearchDocument(
     "frequency",
   ]);
 
-  const partOfSpeech =
-    getPartOfSpeechValues(entry);
+  const partOfSpeech = getPartOfSpeechValues(entry);
 
   const sources = getFieldText(entry, [
     "sources",
@@ -337,9 +310,7 @@ function createSearchDocument(
     "notes",
   ]);
 
-  const recursiveText = collectStrings(entry).join(
-    " "
-  );
+  const recursiveText = collectStrings(entry).join(" ");
 
   return {
     entry,
@@ -381,7 +352,7 @@ function matchesTokens(
   text: string,
   query: string,
   tokens: string[],
-  mode: MatchMode
+  mode: MatchMode,
 ) {
   const normalizedText = normalizeSearchText(text);
 
@@ -394,20 +365,13 @@ function matchesTokens(
   }
 
   if (mode === "all") {
-    return tokens.every((token) =>
-      normalizedText.includes(token)
-    );
+    return tokens.every((token) => normalizedText.includes(token));
   }
 
-  return tokens.some((token) =>
-    normalizedText.includes(token)
-  );
+  return tokens.some((token) => normalizedText.includes(token));
 }
 
-function getScopeText(
-  document: SearchDocument,
-  scope: SearchScope
-) {
+function getScopeText(document: SearchDocument, scope: SearchScope) {
   if (scope === "word") {
     return [
       document.word,
@@ -437,86 +401,61 @@ function getScopeText(
     ].join(" ");
   }
 
+  if (scope === "graph") {
+    return "";
+  }
+
   return document.allText;
 }
 
 function scoreDocument(
   document: SearchDocument,
   normalizedQuery: string,
-  tokens: string[]
+  tokens: string[],
 ) {
   if (!normalizedQuery) {
     return 0;
   }
 
-  const normalizedWord = normalizeSearchText(
-    document.word
-  );
+  const normalizedWord = normalizeSearchText(document.word);
 
-  const normalizedSlug = normalizeSearchText(
-    document.slug
-  );
+  const normalizedSlug = normalizeSearchText(document.slug);
 
-  const normalizedAlternate = normalizeSearchText(
-    document.alternateSpellings
-  );
+  const normalizedAlternate = normalizeSearchText(document.alternateSpellings);
 
   const normalizedDefinition = normalizeSearchText(
-    [
-      document.definitions,
-      document.plainEnglish,
-    ].join(" ")
+    [document.definitions, document.plainEnglish].join(" "),
   );
 
-  const normalizedExamples = normalizeSearchText(
-    document.examples
-  );
+  const normalizedExamples = normalizeSearchText(document.examples);
 
-  const normalizedCulture = normalizeSearchText(
-    document.culturalContext
-  );
+  const normalizedCulture = normalizeSearchText(document.culturalContext);
 
-  const normalizedAll = normalizeSearchText(
-    document.allText
-  );
+  const normalizedAll = normalizeSearchText(document.allText);
 
   let score = 0;
 
   if (normalizedWord === normalizedQuery) {
     score += 200;
-  } else if (
-    normalizedWord.startsWith(normalizedQuery)
-  ) {
+  } else if (normalizedWord.startsWith(normalizedQuery)) {
     score += 120;
-  } else if (
-    normalizedWord.includes(normalizedQuery)
-  ) {
+  } else if (normalizedWord.includes(normalizedQuery)) {
     score += 90;
   }
 
   if (normalizedSlug === normalizedQuery) {
     score += 100;
-  } else if (
-    normalizedSlug.includes(normalizedQuery)
-  ) {
+  } else if (normalizedSlug.includes(normalizedQuery)) {
     score += 50;
   }
 
-  if (
-    normalizedAlternate
-      .split(" ")
-      .includes(normalizedQuery)
-  ) {
+  if (normalizedAlternate.split(" ").includes(normalizedQuery)) {
     score += 90;
-  } else if (
-    normalizedAlternate.includes(normalizedQuery)
-  ) {
+  } else if (normalizedAlternate.includes(normalizedQuery)) {
     score += 60;
   }
 
-  if (
-    normalizedDefinition.includes(normalizedQuery)
-  ) {
+  if (normalizedDefinition.includes(normalizedQuery)) {
     score += 45;
   }
 
@@ -530,19 +469,14 @@ function scoreDocument(
 
   tokens.forEach((token) => {
     if (normalizedWord === token) score += 80;
-    else if (normalizedWord.startsWith(token))
-      score += 45;
-    else if (normalizedWord.includes(token))
-      score += 30;
+    else if (normalizedWord.startsWith(token)) score += 45;
+    else if (normalizedWord.includes(token)) score += 30;
 
-    if (normalizedDefinition.includes(token))
-      score += 12;
+    if (normalizedDefinition.includes(token)) score += 12;
 
-    if (normalizedExamples.includes(token))
-      score += 6;
+    if (normalizedExamples.includes(token)) score += 6;
 
-    if (normalizedCulture.includes(token))
-      score += 5;
+    if (normalizedCulture.includes(token)) score += 5;
 
     if (normalizedAll.includes(token)) score += 2;
   });
@@ -566,12 +500,94 @@ function getPreview(document: SearchDocument) {
   return `${preview.slice(0, 217).trim()}...`;
 }
 
-function getResultPreview(
-  result: RankedResult
-) {
-  const databaseHeadline = stripSearchMarkup(
-    result.headline ?? ""
-  );
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function parseGraphConcepts(value: unknown): GraphConcept[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const record = toRecord(item);
+
+      if (!record) return null;
+
+      const id = String(record.id ?? "");
+      const name = String(
+        record.name ?? record.title ?? record.label ?? "",
+      ).trim();
+
+      if (!name) return null;
+
+      return {
+        id,
+        name,
+        description: String(
+          record.description ?? record.definition ?? record.notes ?? "",
+        ).trim(),
+      };
+    })
+    .filter((concept): concept is GraphConcept => Boolean(concept));
+}
+
+function parseGraphRelationships(value: unknown): GraphRelationship[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const record = toRecord(item);
+
+      if (!record) return null;
+
+      const relatedEntryId = String(
+        record.related_entry_id ?? record.relatedEntryId ?? "",
+      );
+
+      const relatedWord = String(
+        record.related_word ?? record.relatedWord ?? "",
+      ).trim();
+
+      if (!relatedEntryId && !relatedWord) {
+        return null;
+      }
+
+      return {
+        relatedEntryId,
+        relatedWord: relatedWord || "Related entry",
+        relationshipType: String(
+          record.relationship_type ??
+            record.relationshipType ??
+            record.type ??
+            record.label ??
+            "related",
+        ).trim(),
+        direction: String(record.direction ?? "connected").trim(),
+      };
+    })
+    .filter((relationship): relationship is GraphRelationship =>
+      Boolean(relationship),
+    );
+}
+
+function parseStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function getResultPreview(result: RankedResult) {
+  const databaseHeadline = stripSearchMarkup(result.headline ?? "");
 
   if (databaseHeadline) {
     return databaseHeadline;
@@ -585,6 +601,9 @@ function getScopeLabel(scope: SearchScope) {
   if (scope === "definition") return "Definitions";
   if (scope === "example") return "Examples";
   if (scope === "culture") return "Culture";
+  if (scope === "graph") {
+    return "Knowledge Graph";
+  }
   return "All Fields";
 }
 
@@ -606,34 +625,24 @@ function getHighlightTokens(query: string) {
         .trim()
         .split(/\s+/g)
         .map((token) => token.trim())
-        .filter((token) => token.length > 0)
-    )
+        .filter((token) => token.length > 0),
+    ),
   ).sort((a, b) => b.length - a.length);
 }
 
-function renderHighlightedText(
-  text: string,
-  query: string
-) {
+function renderHighlightedText(text: string, query: string) {
   const tokens = getHighlightTokens(query);
 
   if (!text || tokens.length === 0) {
     return text;
   }
 
-  const pattern = new RegExp(
-    `(${tokens.map(escapeRegExp).join("|")})`,
-    "gi"
-  );
+  const pattern = new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "gi");
 
-  const normalizedTokens = new Set(
-    tokens.map((token) => token.toLowerCase())
-  );
+  const normalizedTokens = new Set(tokens.map((token) => token.toLowerCase()));
 
   return text.split(pattern).map((part, index) => {
-    if (
-      normalizedTokens.has(part.toLowerCase())
-    ) {
+    if (normalizedTokens.has(part.toLowerCase())) {
       return (
         <mark
           key={`${part}-${index}`}
@@ -648,9 +657,7 @@ function renderHighlightedText(
   });
 }
 
-function getMatchTypeLabel(
-  matchType: SearchMatchType | undefined
-) {
+function getMatchTypeLabel(matchType: SearchMatchType | undefined) {
   if (matchType === "exact") return "Exact";
 
   if (matchType === "alternate") {
@@ -667,12 +674,14 @@ function getMatchTypeLabel(
     return "Typo Match";
   }
 
+  if (matchType === "graph") {
+    return "Knowledge Graph";
+  }
+
   return "Ranked";
 }
 
-function getMatchTypeClasses(
-  matchType: SearchMatchType | undefined
-) {
+function getMatchTypeClasses(matchType: SearchMatchType | undefined) {
   if (matchType === "exact") {
     return "border-green-400/20 bg-green-400/10 text-green-100";
   }
@@ -689,12 +698,16 @@ function getMatchTypeClasses(
     return "border-orange-400/20 bg-orange-400/10 text-orange-100";
   }
 
+  if (matchType === "graph") {
+    return "border-cyan-400/20 bg-cyan-400/10 text-cyan-100";
+  }
+
   return "border-neutral-700 bg-neutral-900 text-neutral-300";
 }
 
 function getSearchSourceLabel(source: SearchSource) {
   if (source === "supabase") {
-    return "Smart Supabase";
+    return "Graph-aware Supabase";
   }
 
   if (source === "fallback") {
@@ -723,71 +736,45 @@ export function AdvancedSearchDrawer({
   onOpenEntry,
 }: AdvancedSearchDrawerProps) {
   const [query, setQuery] = useState("");
-  const [scope, setScope] =
-    useState<SearchScope>("all");
+  const [scope, setScope] = useState<SearchScope>("all");
 
-  const [matchMode, setMatchMode] =
-    useState<MatchMode>("all");
+  const [matchMode, setMatchMode] = useState<MatchMode>("all");
 
-  const [statusFilter, setStatusFilter] =
-    useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
-  const [
-    partOfSpeechFilter,
-    setPartOfSpeechFilter,
-  ] = useState("all");
+  const [partOfSpeechFilter, setPartOfSpeechFilter] = useState("all");
 
-  const [
-    pronunciationFilter,
-    setPronunciationFilter,
-  ] = useState<PresenceFilter>("all");
+  const [pronunciationFilter, setPronunciationFilter] =
+    useState<PresenceFilter>("all");
 
-  const [sortMode, setSortMode] =
-    useState<SortMode>("relevance");
+  const [sortMode, setSortMode] = useState<SortMode>("relevance");
 
-  const [serverRows, setServerRows] =
-    useState<SupabaseSearchRow[]>([]);
+  const [serverRows, setServerRows] = useState<SupabaseSearchRow[]>([]);
 
-  const [searchSource, setSearchSource] =
-    useState<SearchSource>("local");
+  const [searchSource, setSearchSource] = useState<SearchSource>("local");
 
-  const [isServerSearching, setIsServerSearching] =
-    useState(false);
+  const [isServerSearching, setIsServerSearching] = useState(false);
 
-  const [serverError, setServerError] =
-    useState("");
+  const [serverError, setServerError] = useState("");
 
   const requestIdRef = useRef(0);
 
-  const documents = useMemo(
-    () => entries.map(createSearchDocument),
-    [entries]
-  );
+  const documents = useMemo(() => entries.map(createSearchDocument), [entries]);
 
   const documentById = useMemo(() => {
     return new Map(
-      documents.map((document) => [
-        String(document.entry.id),
-        document,
-      ])
+      documents.map((document) => [String(document.entry.id), document]),
     );
   }, [documents]);
 
   const statusOptions = useMemo(
-    () =>
-      uniqueValues(
-        entries.map((entry) =>
-          String(entry.status ?? "")
-        )
-      ),
-    [entries]
+    () => uniqueValues(entries.map((entry) => String(entry.status ?? ""))),
+    [entries],
   );
 
   const partOfSpeechOptions = useMemo(() => {
     const detectedOptions = uniqueValues(
-      documents.flatMap(
-        (document) => document.partOfSpeech
-      )
+      documents.flatMap((document) => document.partOfSpeech),
     );
 
     return detectedOptions.length > 0
@@ -795,10 +782,7 @@ export function AdvancedSearchDrawer({
       : DEFAULT_PART_OF_SPEECH_OPTIONS;
   }, [documents]);
 
-  const normalizedQuery = useMemo(
-    () => normalizeSearchText(query),
-    [query]
-  );
+  const normalizedQuery = useMemo(() => normalizeSearchText(query), [query]);
 
   const tokens = useMemo(
     () =>
@@ -806,7 +790,7 @@ export function AdvancedSearchDrawer({
         .split(" ")
         .map((token) => token.trim())
         .filter(Boolean),
-    [normalizedQuery]
+    [normalizedQuery],
   );
 
   useEffect(() => {
@@ -836,82 +820,64 @@ export function AdvancedSearchDrawer({
     setIsServerSearching(true);
     setServerError("");
 
-    const timeoutId = window.setTimeout(
-      async () => {
-        try {
-          const supabase =
-            getSupabaseSearchClient();
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const supabase = getSupabaseSearchClient();
 
-          const { data, error } =
-            await supabase.rpc(
-              "search_entries_smart",
-              {
-                p_query: rpcQuery,
-                p_match_mode: matchMode,
-                p_limit: 100,
-                p_fuzzy_threshold: 0.22,
-              }
-            );
+        const { data, error } = await supabase.rpc(
+          "search_entries_graph_aware",
+          {
+            p_query: rpcQuery,
+            p_match_mode: matchMode,
+            p_limit: 100,
+            p_fuzzy_threshold: 0.22,
+          },
+        );
 
-          if (error) {
-            throw error;
-          }
+        if (error) {
+          throw error;
+        }
 
-          if (
-            requestIdRef.current !== requestId
-          ) {
-            return;
-          }
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
 
-          const rows = Array.isArray(data)
-            ? (data as SupabaseSearchRow[])
-            : [];
+        const rows = Array.isArray(data) ? (data as SupabaseSearchRow[]) : [];
 
-          if (rows.length === 0) {
-            setServerRows([]);
-            setSearchSource("fallback");
-            setServerError("");
-            return;
-          }
-
-          setServerRows(rows);
-          setSearchSource("supabase");
-          setServerError("");
-        } catch (error) {
-          if (
-            requestIdRef.current !== requestId
-          ) {
-            return;
-          }
-
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Supabase search is unavailable.";
-
+        if (rows.length === 0) {
           setServerRows([]);
           setSearchSource("fallback");
-          setServerError(message);
-        } finally {
-          if (
-            requestIdRef.current === requestId
-          ) {
-            setIsServerSearching(false);
-          }
+          setServerError("");
+          return;
         }
-      },
-      300
-    );
+
+        setServerRows(rows);
+        setSearchSource("supabase");
+        setServerError("");
+      } catch (error) {
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Supabase search is unavailable.";
+
+        setServerRows([]);
+        setSearchSource("fallback");
+        setServerError(message);
+      } finally {
+        if (requestIdRef.current === requestId) {
+          setIsServerSearching(false);
+        }
+      }
+    }, 300);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [
-    isOpen,
-    matchMode,
-    normalizedQuery,
-    query,
-  ]);
+  }, [isOpen, matchMode, normalizedQuery, query]);
 
   const serverMetadataById = useMemo(() => {
     return new Map(
@@ -919,105 +885,80 @@ export function AdvancedSearchDrawer({
         String(row.entry_id),
         {
           rank: Number(row.rank) || 0,
-          fullTextRank:
-            Number(row.full_text_rank) || 0,
-          fuzzyRank:
-            Number(row.fuzzy_rank) || 0,
+          fullTextRank: Number(row.full_text_rank) || 0,
+          fuzzyRank: Number(row.fuzzy_rank) || 0,
+          graphRank: Number(row.graph_rank) || 0,
           matchType: row.match_type,
           order: index,
           headline: String(row.headline ?? ""),
+          concepts: parseGraphConcepts(row.concepts),
+          relationships: parseGraphRelationships(row.relationships),
+          matchReasons: parseStringArray(row.match_reasons),
         },
-      ])
+      ]),
     );
   }, [serverRows]);
 
   const candidateDocuments = useMemo(() => {
-    if (
-      !normalizedQuery ||
-      searchSource !== "supabase"
-    ) {
+    if (!normalizedQuery || searchSource !== "supabase") {
       return documents;
     }
 
     return serverRows
-      .map((row) =>
-        documentById.get(
-          String(row.entry_id)
-        )
-      )
-      .filter(
-        (
-          document
-        ): document is SearchDocument =>
-          Boolean(document)
-      );
-  }, [
-    documentById,
-    documents,
-    normalizedQuery,
-    searchSource,
-    serverRows,
-  ]);
+      .map((row) => documentById.get(String(row.entry_id)))
+      .filter((document): document is SearchDocument => Boolean(document));
+  }, [documentById, documents, normalizedQuery, searchSource, serverRows]);
 
   const results = useMemo<RankedResult[]>(() => {
     const filtered = candidateDocuments
       .filter((document) => {
         if (
           statusFilter !== "all" &&
-          normalizeSearchText(
-            document.entry.status
-          ) !==
+          normalizeSearchText(document.entry.status) !==
             normalizeSearchText(statusFilter)
         ) {
           return false;
         }
 
         if (partOfSpeechFilter !== "all") {
-          const selectedPartOfSpeech =
-            normalizeSearchText(
-              partOfSpeechFilter
-            );
+          const selectedPartOfSpeech = normalizeSearchText(partOfSpeechFilter);
 
-          const hasMatchingPartOfSpeech =
-            document.partOfSpeech.some(
-              (partOfSpeech) =>
-                normalizeSearchText(
-                  partOfSpeech
-                ) === selectedPartOfSpeech
-            );
+          const hasMatchingPartOfSpeech = document.partOfSpeech.some(
+            (partOfSpeech) =>
+              normalizeSearchText(partOfSpeech) === selectedPartOfSpeech,
+          );
 
           if (!hasMatchingPartOfSpeech) {
             return false;
           }
         }
 
-        const hasPronunciation =
-          document.pronunciation.trim().length > 0;
+        const hasPronunciation = document.pronunciation.trim().length > 0;
 
-        if (
-          pronunciationFilter === "with" &&
-          !hasPronunciation
-        ) {
+        if (pronunciationFilter === "with" && !hasPronunciation) {
           return false;
         }
 
-        if (
-          pronunciationFilter === "without" &&
-          hasPronunciation
-        ) {
+        if (pronunciationFilter === "without" && hasPronunciation) {
           return false;
         }
 
-        const serverMetadata =
-          serverMetadataById.get(
-            String(document.entry.id)
-          );
+        const serverMetadata = serverMetadataById.get(
+          String(document.entry.id),
+        );
+
+        const hasGraphMatch =
+          searchSource === "supabase" && (serverMetadata?.graphRank ?? 0) > 0;
+
+        if (scope === "graph") {
+          return hasGraphMatch;
+        }
 
         const exactScopeMatch = matchesTokens(
           getScopeText(document, scope),
           normalizedQuery,
           tokens,
-          matchMode
+          matchMode,
         );
 
         if (exactScopeMatch) {
@@ -1026,43 +967,33 @@ export function AdvancedSearchDrawer({
 
         const isWordDiscoveryMatch =
           searchSource === "supabase" &&
-          (serverMetadata?.matchType ===
-            "fuzzy" ||
-            serverMetadata?.matchType ===
-              "prefix" ||
-            serverMetadata?.matchType ===
-              "alternate");
+          (serverMetadata?.matchType === "fuzzy" ||
+            serverMetadata?.matchType === "prefix" ||
+            serverMetadata?.matchType === "alternate");
 
         return (
-          isWordDiscoveryMatch &&
-          (scope === "all" || scope === "word")
+          (isWordDiscoveryMatch && (scope === "all" || scope === "word")) ||
+          (hasGraphMatch && scope === "all")
         );
       })
       .map((document) => {
-        const serverMetadata =
-          serverMetadataById.get(
-            String(document.entry.id)
-          );
+        const serverMetadata = serverMetadataById.get(
+          String(document.entry.id),
+        );
 
         return {
           ...document,
-          score: scoreDocument(
-            document,
-            normalizedQuery,
-            tokens
-          ),
-          databaseRank:
-            serverMetadata?.rank,
-          databaseOrder:
-            serverMetadata?.order,
-          fullTextRank:
-            serverMetadata?.fullTextRank,
-          fuzzyRank:
-            serverMetadata?.fuzzyRank,
-          matchType:
-            serverMetadata?.matchType,
-          headline:
-            serverMetadata?.headline,
+          score: scoreDocument(document, normalizedQuery, tokens),
+          databaseRank: serverMetadata?.rank,
+          databaseOrder: serverMetadata?.order,
+          fullTextRank: serverMetadata?.fullTextRank,
+          fuzzyRank: serverMetadata?.fuzzyRank,
+          graphRank: serverMetadata?.graphRank,
+          matchType: serverMetadata?.matchType,
+          headline: serverMetadata?.headline,
+          concepts: serverMetadata?.concepts ?? [],
+          relationships: serverMetadata?.relationships ?? [],
+          matchReasons: serverMetadata?.matchReasons ?? [],
         };
       });
 
@@ -1076,10 +1007,9 @@ export function AdvancedSearchDrawer({
       }
 
       if (sortMode === "status") {
-        const statusComparison =
-          String(a.entry.status).localeCompare(
-            String(b.entry.status)
-          );
+        const statusComparison = String(a.entry.status).localeCompare(
+          String(b.entry.status),
+        );
 
         if (statusComparison !== 0) {
           return statusComparison;
@@ -1093,9 +1023,7 @@ export function AdvancedSearchDrawer({
         typeof a.databaseOrder === "number" &&
         typeof b.databaseOrder === "number"
       ) {
-        return (
-          a.databaseOrder - b.databaseOrder
-        );
+        return a.databaseOrder - b.databaseOrder;
       }
 
       if (b.score !== a.score) {
@@ -1119,10 +1047,7 @@ export function AdvancedSearchDrawer({
   ]);
 
   const suggestedQuery = useMemo(() => {
-    if (
-      searchSource !== "supabase" ||
-      !normalizedQuery
-    ) {
+    if (searchSource !== "supabase" || !normalizedQuery) {
       return "";
     }
 
@@ -1130,34 +1055,28 @@ export function AdvancedSearchDrawer({
       (result) =>
         (result.matchType === "fuzzy" ||
           result.matchType === "prefix" ||
-          result.matchType ===
-            "alternate") &&
-        normalizeSearchText(result.word) !==
-          normalizedQuery
+          result.matchType === "alternate") &&
+        normalizeSearchText(result.word) !== normalizedQuery,
     );
 
     return suggestion?.word ?? "";
-  }, [
-    normalizedQuery,
-    results,
-    searchSource,
-  ]);
+  }, [normalizedQuery, results, searchSource]);
 
   const resultStats = useMemo(() => {
     const verified = results.filter(
-      (result) =>
-        String(result.entry.status).toLowerCase() ===
-        "verified"
+      (result) => String(result.entry.status).toLowerCase() === "verified",
     ).length;
 
     const withPronunciation = results.filter(
-      (result) =>
-        result.pronunciation.trim().length > 0
+      (result) => result.pronunciation.trim().length > 0,
     ).length;
 
     const withAlternateSpellings = results.filter(
-      (result) =>
-        result.alternateSpellings.trim().length > 0
+      (result) => result.alternateSpellings.trim().length > 0,
+    ).length;
+
+    const graphMatches = results.filter(
+      (result) => (result.graphRank ?? 0) > 0,
     ).length;
 
     return {
@@ -1165,6 +1084,7 @@ export function AdvancedSearchDrawer({
       verified,
       withPronunciation,
       withAlternateSpellings,
+      graphMatches,
     };
   }, [results]);
 
@@ -1199,6 +1119,14 @@ export function AdvancedSearchDrawer({
     onOpenEntry(entry);
   }
 
+  function openEntryById(entryId: string) {
+    const document = documentById.get(String(entryId));
+
+    if (!document) return;
+
+    openEntry(document.entry);
+  }
+
   if (!isOpen) {
     return null;
   }
@@ -1223,10 +1151,8 @@ export function AdvancedSearchDrawer({
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">
-              Search words, alternate spellings,
-              definitions, examples, pronunciation, and
-              cultural context with ranked results and
-              editorial filters.
+              Search words, definitions, culture, concepts, and relationships
+              with ranked results, typo tolerance, and graph-aware discovery.
             </p>
           </div>
 
@@ -1247,9 +1173,7 @@ export function AdvancedSearchDrawer({
 
               <input
                 value={query}
-                onChange={(event) =>
-                  setQuery(event.target.value)
-                }
+                onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search deadass, honesty, bodega culture..."
                 autoFocus
                 className="w-full rounded-2xl border border-neutral-700 bg-neutral-950 py-4 pl-11 pr-4 text-base font-semibold text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
@@ -1274,19 +1198,16 @@ export function AdvancedSearchDrawer({
               <select
                 value={scope}
                 onChange={(event) =>
-                  setScope(
-                    event.target.value as SearchScope
-                  )
+                  setScope(event.target.value as SearchScope)
                 }
                 className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm font-bold text-white outline-none focus:border-yellow-400"
               >
                 <option value="all">All Fields</option>
                 <option value="word">Words</option>
-                <option value="definition">
-                  Definitions
-                </option>
+                <option value="definition">Definitions</option>
                 <option value="example">Examples</option>
                 <option value="culture">Culture</option>
+                <option value="graph">Knowledge Graph</option>
               </select>
             </label>
 
@@ -1298,17 +1219,13 @@ export function AdvancedSearchDrawer({
               <select
                 value={matchMode}
                 onChange={(event) =>
-                  setMatchMode(
-                    event.target.value as MatchMode
-                  )
+                  setMatchMode(event.target.value as MatchMode)
                 }
                 className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm font-bold text-white outline-none focus:border-yellow-400"
               >
                 <option value="all">All Words</option>
                 <option value="any">Any Word</option>
-                <option value="phrase">
-                  Exact Phrase
-                </option>
+                <option value="phrase">Exact Phrase</option>
               </select>
             </label>
 
@@ -1319,14 +1236,10 @@ export function AdvancedSearchDrawer({
 
               <select
                 value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(event.target.value)
-                }
+                onChange={(event) => setStatusFilter(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm font-bold text-white outline-none focus:border-yellow-400"
               >
-                <option value="all">
-                  All Statuses
-                </option>
+                <option value="all">All Statuses</option>
 
                 {statusOptions.map((status) => (
                   <option key={status} value={status}>
@@ -1343,25 +1256,16 @@ export function AdvancedSearchDrawer({
 
               <select
                 value={partOfSpeechFilter}
-                onChange={(event) =>
-                  setPartOfSpeechFilter(
-                    event.target.value
-                  )
-                }
+                onChange={(event) => setPartOfSpeechFilter(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm font-bold text-white outline-none focus:border-yellow-400"
               >
                 <option value="all">All Types</option>
 
-                {partOfSpeechOptions.map(
-                  (partOfSpeech) => (
-                    <option
-                      key={partOfSpeech}
-                      value={partOfSpeech}
-                    >
-                      {partOfSpeech}
-                    </option>
-                  )
-                )}
+                {partOfSpeechOptions.map((partOfSpeech) => (
+                  <option key={partOfSpeech} value={partOfSpeech}>
+                    {partOfSpeech}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -1373,18 +1277,13 @@ export function AdvancedSearchDrawer({
               <select
                 value={pronunciationFilter}
                 onChange={(event) =>
-                  setPronunciationFilter(
-                    event.target
-                      .value as PresenceFilter
-                  )
+                  setPronunciationFilter(event.target.value as PresenceFilter)
                 }
                 className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm font-bold text-white outline-none focus:border-yellow-400"
               >
                 <option value="all">Any</option>
                 <option value="with">Has It</option>
-                <option value="without">
-                  Missing It
-                </option>
+                <option value="without">Missing It</option>
               </select>
             </label>
 
@@ -1396,15 +1295,11 @@ export function AdvancedSearchDrawer({
               <select
                 value={sortMode}
                 onChange={(event) =>
-                  setSortMode(
-                    event.target.value as SortMode
-                  )
+                  setSortMode(event.target.value as SortMode)
                 }
                 className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm font-bold text-white outline-none focus:border-yellow-400"
               >
-                <option value="relevance">
-                  Relevance
-                </option>
+                <option value="relevance">Relevance</option>
                 <option value="a-z">A–Z</option>
                 <option value="z-a">Z–A</option>
                 <option value="status">Status</option>
@@ -1416,7 +1311,7 @@ export function AdvancedSearchDrawer({
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`rounded-full border px-3 py-1 text-xs font-black ${getSearchSourceClasses(
-                  searchSource
+                  searchSource,
                 )}`}
               >
                 {getSearchSourceLabel(searchSource)}
@@ -1432,10 +1327,10 @@ export function AdvancedSearchDrawer({
 
             <p className="text-xs leading-5 text-neutral-500">
               {searchSource === "supabase"
-                ? "Full-text, prefix, and typo-tolerant ranking are active."
+                ? "Lexicon text, concepts, and relationships are ranked together."
                 : searchSource === "fallback"
-                ? "Using browser search because the smart RPC returned no candidates or is unavailable."
-                : "Type a query to use full-text and typo-tolerant Supabase search."}
+                  ? "Using browser search because graph-aware Supabase search is unavailable."
+                  : "Type a query to search the lexicon and Knowledge Graph together."}
             </p>
           </div>
 
@@ -1446,7 +1341,7 @@ export function AdvancedSearchDrawer({
           )}
         </section>
 
-        <section className="my-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <section className="my-5 grid grid-cols-2 gap-3 md:grid-cols-5">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">
               Results
@@ -1486,6 +1381,16 @@ export function AdvancedSearchDrawer({
               {resultStats.withAlternateSpellings}
             </p>
           </div>
+
+          <div className="col-span-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4 md:col-span-1">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-100/60">
+              Graph Matches
+            </p>
+
+            <p className="mt-2 text-2xl font-black text-cyan-50">
+              {resultStats.graphMatches}
+            </p>
+          </div>
         </section>
 
         {suggestedQuery && (
@@ -1516,24 +1421,17 @@ export function AdvancedSearchDrawer({
         <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-4">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h3 className="font-black text-white">
-                Search Results
-              </h3>
+              <h3 className="font-black text-white">Search Results</h3>
 
               <p className="mt-1 text-sm text-neutral-500">
                 Searching {getScopeLabel(scope)}
-                {normalizedQuery
-                  ? ` for “${query.trim()}”`
-                  : ""}
-                .
+                {normalizedQuery ? ` for “${query.trim()}”` : ""}.
               </p>
             </div>
 
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-600">
-              {sortMode === "relevance"
-                ? "Ranked"
-                : "Sorted"}{" "}
-              · {results.length} shown
+              {sortMode === "relevance" ? "Ranked" : "Sorted"} ·{" "}
+              {results.length} shown
             </p>
           </div>
 
@@ -1542,11 +1440,11 @@ export function AdvancedSearchDrawer({
               <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
 
               <p className="mt-4 font-black text-yellow-100">
-                Searching the Supabase index...
+                Searching the lexicon and graph...
               </p>
 
               <p className="mt-2 text-sm text-yellow-100/60">
-                Ranked database results will appear here.
+                Graph-aware ranked results will appear here.
               </p>
             </div>
           ) : results.length === 0 ? (
@@ -1556,8 +1454,7 @@ export function AdvancedSearchDrawer({
               </p>
 
               <p className="mt-2 text-sm text-neutral-500">
-                Try Any Word, widen the scope, or clear one
-                of the filters.
+                Try Any Word, widen the scope, or clear one of the filters.
               </p>
             </div>
           ) : (
@@ -1570,47 +1467,44 @@ export function AdvancedSearchDrawer({
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="truncate text-lg font-black text-white">
-                        {renderHighlightedText(
-                          result.word,
-                          query
-                        )}
+                        {renderHighlightedText(result.word, query)}
                       </p>
 
                       <p className="mt-1 text-xs text-neutral-500">
-                        /{result.slug} ·{" "}
-                        {result.entry.status}
+                        /{result.slug} · {result.entry.status}
                       </p>
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                      {searchSource === "supabase" && result.matchType && (
+                        <span
+                          className={`rounded-full border px-2 py-1 text-[10px] font-black ${getMatchTypeClasses(
+                            result.matchType,
+                          )}`}
+                        >
+                          {getMatchTypeLabel(result.matchType)}
+                        </span>
+                      )}
+
                       {searchSource === "supabase" &&
-                        result.matchType && (
-                          <span
-                            className={`rounded-full border px-2 py-1 text-[10px] font-black ${getMatchTypeClasses(
-                              result.matchType
-                            )}`}
-                          >
-                            {getMatchTypeLabel(
-                              result.matchType
-                            )}
+                        (result.graphRank ?? 0) > 0 && (
+                          <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-100">
+                            Graph +{result.graphRank?.toFixed(2)}
                           </span>
                         )}
 
-                      {normalizedQuery &&
-                        sortMode === "relevance" && (
-                          <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
-                            {searchSource === "supabase" &&
-                            typeof result.databaseRank === "number"
-                              ? `Rank ${result.databaseRank.toFixed(3)}`
-                              : `${result.score} pts`}
-                          </span>
-                        )}
+                      {normalizedQuery && sortMode === "relevance" && (
+                        <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
+                          {searchSource === "supabase" &&
+                          typeof result.databaseRank === "number"
+                            ? `Rank ${result.databaseRank.toFixed(3)}`
+                            : `${result.score} pts`}
+                        </span>
+                      )}
 
                       {onOpenEntry && (
                         <button
-                          onClick={() =>
-                            openEntry(result.entry)
-                          }
+                          onClick={() => openEntry(result.entry)}
                           className="rounded-xl bg-yellow-400 px-3 py-2 text-xs font-black text-black hover:bg-yellow-300"
                         >
                           Open
@@ -1620,43 +1514,98 @@ export function AdvancedSearchDrawer({
                   </div>
 
                   <p className="mt-4 text-sm leading-6 text-neutral-400">
-                    {renderHighlightedText(
-                      getResultPreview(result),
-                      query
-                    )}
+                    {renderHighlightedText(getResultPreview(result), query)}
                   </p>
 
                   {searchSource === "supabase" &&
-                    typeof result.fuzzyRank ===
-                      "number" &&
+                    typeof result.fuzzyRank === "number" &&
                     result.fuzzyRank > 0 && (
                       <p className="mt-2 text-xs font-bold text-neutral-600">
-                        Similarity{" "}
-                        {Math.round(
-                          result.fuzzyRank * 100
-                        )}
-                        %
-                        {typeof result.fullTextRank ===
-                          "number" &&
-                          result.fullTextRank > 0
-                          ? ` · Full-text ${result.fullTextRank.toFixed(
-                              4
-                            )}`
+                        Similarity {Math.round(result.fuzzyRank * 100)}%
+                        {typeof result.fullTextRank === "number" &&
+                        result.fullTextRank > 0
+                          ? ` · Full-text ${result.fullTextRank.toFixed(4)}`
                           : ""}
                       </p>
                     )}
 
+                  {result.matchReasons.length > 0 && (
+                    <p className="mt-3 text-xs font-bold text-cyan-100/60">
+                      {result.matchReasons.join(" · ")}
+                    </p>
+                  )}
+
+                  {result.concepts.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-neutral-600">
+                        Concepts
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {result.concepts.map((concept) => (
+                          <button
+                            key={`${result.entry.id}-concept-${concept.id}-${concept.name}`}
+                            type="button"
+                            title={concept.description || concept.name}
+                            onClick={() => {
+                              setQuery(concept.name);
+                              setScope("graph");
+                              setMatchMode("all");
+                            }}
+                            className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-100 hover:bg-cyan-400/20"
+                          >
+                            🧠 {concept.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {result.relationships.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-neutral-600">
+                        Related Entries
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {result.relationships
+                          .slice(0, 8)
+                          .map((relationship, index) => {
+                            const canOpen = documentById.has(
+                              relationship.relatedEntryId,
+                            );
+
+                            return (
+                              <button
+                                key={`${result.entry.id}-relationship-${relationship.relatedEntryId}-${index}`}
+                                type="button"
+                                disabled={!canOpen}
+                                title={`${relationship.direction}: ${relationship.relationshipType}`}
+                                onClick={() =>
+                                  openEntryById(relationship.relatedEntryId)
+                                }
+                                className="rounded-full border border-purple-400/20 bg-purple-400/10 px-3 py-1 text-xs font-bold text-purple-100 hover:bg-purple-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                🔗 {relationship.relatedWord}
+                                {relationship.relationshipType
+                                  ? ` · ${relationship.relationshipType}`
+                                  : ""}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {result.partOfSpeech.map(
-                      (partOfSpeech) => (
-                        <span
-                          key={`${result.entry.id}-${partOfSpeech}`}
-                          className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-bold text-neutral-300"
-                        >
-                          {partOfSpeech}
-                        </span>
-                      )
-                    )}
+                    {result.partOfSpeech.map((partOfSpeech) => (
+                      <span
+                        key={`${result.entry.id}-${partOfSpeech}`}
+                        className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-bold text-neutral-300"
+                      >
+                        {partOfSpeech}
+                      </span>
+                    ))}
 
                     {result.pronunciation && (
                       <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-bold text-sky-100">
@@ -1666,8 +1615,7 @@ export function AdvancedSearchDrawer({
 
                     {result.alternateSpellings && (
                       <span className="rounded-full border border-purple-400/20 bg-purple-400/10 px-3 py-1 text-xs font-bold text-purple-100">
-                        Alt:{" "}
-                        {result.alternateSpellings}
+                        Alt: {result.alternateSpellings}
                       </span>
                     )}
                   </div>
@@ -1678,15 +1626,12 @@ export function AdvancedSearchDrawer({
         </section>
 
         <div className="mt-6 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-          <p className="font-black text-yellow-100">
-            Alpha 4.3 note
-          </p>
+          <p className="font-black text-yellow-100">Alpha 4.4 note</p>
 
           <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-            Search now combines weighted full-text rank,
-            exact-word boosts, prefix discovery, trigram typo
-            tolerance, highlighted matches, and a local
-            browser fallback.
+            Search now combines lexical relevance with Supabase concepts and
+            entry relationships. Concept chips launch graph-only searches, and
+            related-entry chips open connected lexicon records directly.
           </p>
         </div>
       </aside>
