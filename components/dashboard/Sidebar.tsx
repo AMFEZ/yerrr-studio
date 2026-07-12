@@ -32,13 +32,9 @@ type SidebarProps = {
 
   onOpenActivity?: () => void;
   onOpenBackup?: () => void;
-  onOpenConcepts?: () => void;
   onOpenGraphStats?: () => void;
-  onOpenMergeConcepts?: () => void;
-  onOpenRelationships?: () => void;
   onOpenGraphExplorer?: () => void;
   onOpenGraphMigration?: () => void;
-  onOpenCloudGraph?: () => void;
   onOpenCloudConceptEditor?: () => void;
   onOpenCloudRelationshipEditor?: () => void;
 
@@ -58,7 +54,7 @@ type NavItem = {
   soon?: boolean;
   action?: () => void;
 };
-const VERSION_LABEL = "Alpha 3.7C4A";
+const VERSION_LABEL = "Alpha 3.7D";
 
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -265,71 +261,42 @@ export function Sidebar(props: SidebarProps) {
   ];
 
   const futureItems: NavItem[] = [
-  {
-    key: "concepts",
-    label: "Concepts",
-    description: "Create, assign, and browse concepts.",
-    icon: "🧠",
-    action: props.onOpenConcepts,
-  },
-  {
-    key: "graph-health",
-    label: "Graph Health",
-    description: "Measure Supabase coverage and graph gaps.",
-    icon: "📊",
-    action: props.onOpenGraphStats,
-  },
-  {
-    key: "merge-concepts",
-    label: "Merge Concepts",
-    description: "Combine duplicate concepts safely.",
-    icon: "🔀",
-    action: props.onOpenMergeConcepts,
-  },
-  {
-    key: "relationships",
-    label: "Relationships",
-    description: "Create direct entry connections.",
-    icon: "🕸️",
-    action: props.onOpenRelationships,
-  },
- {
-  key: "graph-explorer",
-  label: "Graph Explorer",
-  description: "Explore the permanent Supabase graph.",
-  icon: "🧭",
-  action: props.onOpenGraphExplorer,
-},
-  {
-  key: "graph-migration",
-  label: "Cloud Migration",
-  description: "Copy the local graph into Supabase.",
-  icon: "☁️",
-  action: props.onOpenGraphMigration,
-},
-{
-  key: "cloud-graph",
-  label: "Cloud Graph",
-  description: "Browse permanent Supabase graph data.",
-  icon: "🌐",
-  action: props.onOpenCloudGraph,
-},
-{
-  key: "cloud-concept-editor",
-  label: "Cloud Concepts",
-  description: "Edit concepts and assignments in Supabase.",
-  icon: "☁️",
-  action: props.onOpenCloudConceptEditor,
-},
-{
-  key: "cloud-relationship-editor",
-  label: "Cloud Relationships",
-  description: "Edit entry relationships in Supabase.",
-  icon: "🔗",
-  action: props.onOpenCloudRelationshipEditor,
-},
-
-];
+    {
+      key: "concepts",
+      label: "Concepts",
+      description: "Create concepts and assign entries in Supabase.",
+      icon: "🧠",
+      action: props.onOpenCloudConceptEditor,
+    },
+    {
+      key: "relationships",
+      label: "Relationships",
+      description: "Create entry relationships in Supabase.",
+      icon: "🔗",
+      action: props.onOpenCloudRelationshipEditor,
+    },
+    {
+      key: "graph-health",
+      label: "Graph Health",
+      description: "Measure Supabase coverage and graph gaps.",
+      icon: "📊",
+      action: props.onOpenGraphStats,
+    },
+    {
+      key: "graph-explorer",
+      label: "Graph Explorer",
+      description: "Explore the permanent Supabase graph.",
+      icon: "🧭",
+      action: props.onOpenGraphExplorer,
+    },
+    {
+      key: "graph-migration",
+      label: "Migration Backup",
+      description: "Review or repeat the local-to-cloud migration.",
+      icon: "🧳",
+      action: props.onOpenGraphMigration,
+    },
+  ];
 
   function navigate(key: string) {
     const handlers = [
@@ -486,127 +453,88 @@ export function Sidebar(props: SidebarProps) {
           </select>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
-  {(props.onCreateEntry || props.onNewEntry || props.openCreateModal) && (
-    <button
-      type="button"
-      onClick={createEntry}
-      className="rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
-    >
-      + Entry
-    </button>
-  )}
+            {(props.onCreateEntry ||
+              props.onNewEntry ||
+              props.openCreateModal) && (
+              <button
+                type="button"
+                onClick={createEntry}
+                className="rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
+              >
+                + Entry
+              </button>
+            )}
 
-  {props.onOpenActivity && (
-    <button
-      type="button"
-      onClick={props.onOpenActivity}
-      className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-    >
-      Activity
-    </button>
-  )}
+            {props.onOpenActivity && (
+              <button
+                type="button"
+                onClick={props.onOpenActivity}
+                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                Activity
+              </button>
+            )}
 
-  {props.onOpenBackup && (
-    <button
-      type="button"
-      onClick={props.onOpenBackup}
-      className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-    >
-      Backup
-    </button>
-  )}
+            {props.onOpenBackup && (
+              <button
+                type="button"
+                onClick={props.onOpenBackup}
+                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                Backup
+              </button>
+            )}
 
-  {props.onOpenConcepts && (
-    <button
-      type="button"
-      onClick={props.onOpenConcepts}
-      className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-    >
-      Concepts
-    </button>
-  )}
+            {props.onOpenCloudConceptEditor && (
+              <button
+                type="button"
+                onClick={props.onOpenCloudConceptEditor}
+                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                🧠 Concepts
+              </button>
+            )}
 
-  {props.onOpenGraphStats && (
-    <button
-      type="button"
-      onClick={props.onOpenGraphStats}
-      className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-    >
-      📊 Graph Health
-    </button>
-  )}
+            {props.onOpenCloudRelationshipEditor && (
+              <button
+                type="button"
+                onClick={props.onOpenCloudRelationshipEditor}
+                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                🔗 Relationships
+              </button>
+            )}
 
-  {props.onOpenMergeConcepts && (
-  <button
-    type="button"
-    onClick={props.onOpenMergeConcepts}
-    className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-  >
-    Merge Concepts
-  </button>
-)}
+            {props.onOpenGraphStats && (
+              <button
+                type="button"
+                onClick={props.onOpenGraphStats}
+                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                📊 Graph Health
+              </button>
+            )}
 
-{props.onOpenRelationships && (
-  <button
-    type="button"
-    onClick={props.onOpenRelationships}
-    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-  >
-    🕸️ Relationships
-  </button>
-)}
+            {props.onOpenGraphExplorer && (
+              <button
+                type="button"
+                onClick={props.onOpenGraphExplorer}
+                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+              >
+                🧭 Graph Explorer
+              </button>
+            )}
 
-{props.onOpenGraphExplorer && (
-  <button
-    type="button"
-    onClick={props.onOpenGraphExplorer}
-    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-  >
-    🧭 Graph Explorer
-  </button>
-)}
-
-{props.onOpenGraphMigration && (
-  <button
-    type="button"
-    onClick={props.onOpenGraphMigration}
-    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-  >
-    ☁️ Cloud Migration
-  </button>
-)}
-
-{props.onOpenCloudGraph && (
-  <button
-    type="button"
-    onClick={props.onOpenCloudGraph}
-    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-  >
-    🌐 Cloud Graph
-  </button>
-)}
-
-{props.onOpenCloudConceptEditor && (
-  <button
-    type="button"
-    onClick={props.onOpenCloudConceptEditor}
-    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-  >
-    ☁️ Cloud Concepts
-  </button>
-)}
-
-{props.onOpenCloudRelationshipEditor && (
-  <button
-    type="button"
-    onClick={props.onOpenCloudRelationshipEditor}
-    className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-  >
-    🔗 Cloud Relationships
-  </button>
-)}
-
-</div>
+            {props.onOpenGraphMigration && (
+              <button
+                type="button"
+                onClick={props.onOpenGraphMigration}
+                className="col-span-2 rounded-2xl border border-zinc-200 bg-zinc-100 px-3 py-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-200"
+              >
+                🧳 Migration Backup
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -691,20 +619,20 @@ export function Sidebar(props: SidebarProps) {
             <div className="mt-3 space-y-3">
               <div>
                 <div className="flex items-center justify-between text-sm font-bold text-zinc-900">
-                  <span>Phase 2 CMS</span>
-                  <span>Final Polish</span>
+                  <span>Phase 3 Knowledge Graph</span>
+                  <span>Cloud Complete</span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-zinc-100">
-                  <div className="h-2 w-[96%] rounded-full bg-zinc-950" />
+                  <div className="h-2 w-full rounded-full bg-zinc-950" />
                 </div>
               </div>
 
               <div className="rounded-2xl bg-zinc-50 p-3">
                 <p className="text-sm font-bold text-zinc-900">
-                  Next: Knowledge Graph
+                  Next: Search
                 </p>
                 <p className="mt-1 text-xs leading-5 text-zinc-500">
-                  Concepts, relationships, merge tools, and statistics.
+                  Search indexing, filters, ranking, and discovery tools.
                 </p>
               </div>
             </div>
