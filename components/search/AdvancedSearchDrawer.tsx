@@ -1135,17 +1135,17 @@ export function AdvancedSearchDrawer({
         </section>
 
         <div className="mt-6 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-          <p className="font-black text-yellow-100">
-            Alpha 4.0 note
-          </p>
+  <p className="font-black text-yellow-100">
+    Alpha 4.1 note
+  </p>
 
-          <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-            Advanced Search currently ranks the entries
-            already loaded in Studio. The next search build
-            can move indexing and ranked queries into
-            Supabase for larger datasets.
-          </p>
-        </div>
+  <p className="mt-2 text-sm leading-6 text-yellow-100/70">
+    The Supabase full-text search index is installed and
+    synchronized. This drawer still searches the entries
+    loaded in Studio until Alpha 4.2 connects it to the
+    ranked search RPC.
+  </p>
+</div>
       </aside>
     </div>
   );

@@ -56,7 +56,7 @@ type NavItem = {
   action?: () => void;
 };
 
-const VERSION_LABEL = "Alpha 4.0";
+const VERSION_LABEL = "Alpha 4.1";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
