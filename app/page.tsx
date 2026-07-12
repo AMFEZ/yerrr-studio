@@ -28,6 +28,7 @@ import { CloudConceptEditorDrawer } from "@/components/concepts/CloudConceptEdit
 import { CloudRelationshipEditorDrawer } from "@/components/relationships/CloudRelationshipEditorDrawer";
 import { AIAssistantDrawer } from "@/components/ai/AIAssistantDrawer";
 import { AIEditorialHandoffPanel } from "@/components/ai/AIEditorialHandoffPanel";
+import { AIMissingFieldsPanel } from "@/components/ai/AIMissingFieldsPanel";
 import type { AIEditorialHandoff } from "@/types/aiEditorial";
 import { createClient } from "@/lib/supabase/client";
 
@@ -83,7 +84,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.5";
+const APP_VERSION = "Alpha 5.6";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -343,12 +344,22 @@ export default function Home() {
   const [isCloudRelationshipEditorOpen, setIsCloudRelationshipEditorOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] =
     useState(false);
+    
+const [
+  isAIMissingFieldsOpen,
+  setIsAIMissingFieldsOpen,
+] = useState(false);
+
   const [
     aiEditorialHandoff,
     setAIEditorialHandoff,
   ] = useState<AIEditorialHandoff | null>(
     null,
   );
+
+useEffect(() => {
+  setIsAIMissingFieldsOpen(false);
+}, [selectedEntry?.id]);
 
   useEffect(() => {
     if (!aiEditorialHandoff) {
@@ -2141,14 +2152,41 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       )}
 
       {selectedEntry && (
-        <EntryEditorModal
-          entry={selectedEntry}
-          onClose={() => setSelectedEntry(null)}
-          onSave={handleSaveEntry}
-          onAutoSave={handleAutoSaveEntry}
-          onDelete={handleDeleteEntry}
-        />
-      )}
+  <EntryEditorModal
+    entry={selectedEntry}
+    onClose={() => {
+      setIsAIMissingFieldsOpen(false);
+      setSelectedEntry(null);
+    }}
+    onSave={handleSaveEntry}
+    onAutoSave={handleAutoSaveEntry}
+    onDelete={handleDeleteEntry}
+  />
+)}
+
+{selectedEntry &&
+  !isAIMissingFieldsOpen && (
+    <button
+      type="button"
+      onClick={() =>
+        setIsAIMissingFieldsOpen(true)
+      }
+      className="fixed bottom-24 left-4 z-[94] rounded-2xl border border-violet-300/30 bg-violet-400 px-4 py-3 text-sm font-black text-black shadow-2xl transition hover:scale-[1.02] hover:bg-violet-300 md:bottom-6 md:left-6"
+    >
+      ✨ Fill missing fields
+    </button>
+  )}
+
+{selectedEntry &&
+  isAIMissingFieldsOpen && (
+    <AIMissingFieldsPanel
+      key={`ai-missing-fields-${selectedEntry.id}`}
+      entry={selectedEntry}
+      onClose={() =>
+        setIsAIMissingFieldsOpen(false)
+      }
+    />
+  )}
 
       {selectedEntry &&
         aiEditorialHandoff &&
