@@ -47,10 +47,20 @@ type SearchDocument = {
   allText: string;
 };
 
+type SearchMatchType =
+  | "exact"
+  | "alternate"
+  | "prefix"
+  | "full_text"
+  | "fuzzy";
+
 type RankedResult = SearchDocument & {
   score: number;
   databaseRank?: number;
   databaseOrder?: number;
+  fullTextRank?: number;
+  fuzzyRank?: number;
+  matchType?: SearchMatchType;
   headline?: string;
 };
 
@@ -62,6 +72,9 @@ type SupabaseSearchRow = {
   pronunciation: string;
   alternate_spellings: string;
   rank: number;
+  full_text_rank: number;
+  fuzzy_rank: number;
+  match_type: SearchMatchType;
   headline: string;
 };
 
@@ -553,6 +566,20 @@ function getPreview(document: SearchDocument) {
   return `${preview.slice(0, 217).trim()}...`;
 }
 
+function getResultPreview(
+  result: RankedResult
+) {
+  const databaseHeadline = stripSearchMarkup(
+    result.headline ?? ""
+  );
+
+  if (databaseHeadline) {
+    return databaseHeadline;
+  }
+
+  return getPreview(result);
+}
+
 function getScopeLabel(scope: SearchScope) {
   if (scope === "word") return "Words";
   if (scope === "definition") return "Definitions";
@@ -561,37 +588,113 @@ function getScopeLabel(scope: SearchScope) {
   return "All Fields";
 }
 
-function buildRpcQuery(
-  query: string,
-  matchMode: MatchMode
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripSearchMarkup(value: string) {
+  return value
+    .replace(/<\/?mark>/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getHighlightTokens(query: string) {
+  return Array.from(
+    new Set(
+      query
+        .trim()
+        .split(/\s+/g)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0)
+    )
+  ).sort((a, b) => b.length - a.length);
+}
+
+function renderHighlightedText(
+  text: string,
+  query: string
 ) {
-  const cleanTokens = query
-    .trim()
-    .replace(/["\\]/g, " ")
-    .split(/\s+/g)
-    .map((token) => token.trim())
-    .filter(Boolean);
+  const tokens = getHighlightTokens(query);
 
-  if (cleanTokens.length === 0) {
-    return "";
+  if (!text || tokens.length === 0) {
+    return text;
   }
 
-  if (matchMode === "phrase") {
-    return `"${cleanTokens.join(" ")}"`;
+  const pattern = new RegExp(
+    `(${tokens.map(escapeRegExp).join("|")})`,
+    "gi"
+  );
+
+  const normalizedTokens = new Set(
+    tokens.map((token) => token.toLowerCase())
+  );
+
+  return text.split(pattern).map((part, index) => {
+    if (
+      normalizedTokens.has(part.toLowerCase())
+    ) {
+      return (
+        <mark
+          key={`${part}-${index}`}
+          className="rounded bg-yellow-400 px-0.5 text-black"
+        >
+          {part}
+        </mark>
+      );
+    }
+
+    return part;
+  });
+}
+
+function getMatchTypeLabel(
+  matchType: SearchMatchType | undefined
+) {
+  if (matchType === "exact") return "Exact";
+
+  if (matchType === "alternate") {
+    return "Alternate";
   }
 
-  if (matchMode === "any") {
-    return cleanTokens
-      .map((token) => `"${token}"`)
-      .join(" OR ");
+  if (matchType === "prefix") return "Prefix";
+
+  if (matchType === "full_text") {
+    return "Full Text";
   }
 
-  return cleanTokens.join(" ");
+  if (matchType === "fuzzy") {
+    return "Typo Match";
+  }
+
+  return "Ranked";
+}
+
+function getMatchTypeClasses(
+  matchType: SearchMatchType | undefined
+) {
+  if (matchType === "exact") {
+    return "border-green-400/20 bg-green-400/10 text-green-100";
+  }
+
+  if (matchType === "alternate") {
+    return "border-purple-400/20 bg-purple-400/10 text-purple-100";
+  }
+
+  if (matchType === "prefix") {
+    return "border-sky-400/20 bg-sky-400/10 text-sky-100";
+  }
+
+  if (matchType === "fuzzy") {
+    return "border-orange-400/20 bg-orange-400/10 text-orange-100";
+  }
+
+  return "border-neutral-700 bg-neutral-900 text-neutral-300";
 }
 
 function getSearchSourceLabel(source: SearchSource) {
   if (source === "supabase") {
-    return "Supabase index";
+    return "Smart Supabase";
   }
 
   if (source === "fallback") {
@@ -718,10 +821,7 @@ export function AdvancedSearchDrawer({
       return;
     }
 
-    const rpcQuery = buildRpcQuery(
-      query,
-      matchMode
-    );
+    const rpcQuery = query.trim();
 
     if (!rpcQuery) {
       setServerRows([]);
@@ -744,10 +844,12 @@ export function AdvancedSearchDrawer({
 
           const { data, error } =
             await supabase.rpc(
-              "search_entries_fts",
+              "search_entries_smart",
               {
                 p_query: rpcQuery,
+                p_match_mode: matchMode,
                 p_limit: 100,
+                p_fuzzy_threshold: 0.22,
               }
             );
 
@@ -817,6 +919,11 @@ export function AdvancedSearchDrawer({
         String(row.entry_id),
         {
           rank: Number(row.rank) || 0,
+          fullTextRank:
+            Number(row.full_text_rank) || 0,
+          fuzzyRank:
+            Number(row.fuzzy_rank) || 0,
+          matchType: row.match_type,
           order: index,
           headline: String(row.headline ?? ""),
         },
@@ -901,11 +1008,34 @@ export function AdvancedSearchDrawer({
           return false;
         }
 
-        return matchesTokens(
+        const serverMetadata =
+          serverMetadataById.get(
+            String(document.entry.id)
+          );
+
+        const exactScopeMatch = matchesTokens(
           getScopeText(document, scope),
           normalizedQuery,
           tokens,
           matchMode
+        );
+
+        if (exactScopeMatch) {
+          return true;
+        }
+
+        const isWordDiscoveryMatch =
+          searchSource === "supabase" &&
+          (serverMetadata?.matchType ===
+            "fuzzy" ||
+            serverMetadata?.matchType ===
+              "prefix" ||
+            serverMetadata?.matchType ===
+              "alternate");
+
+        return (
+          isWordDiscoveryMatch &&
+          (scope === "all" || scope === "word")
         );
       })
       .map((document) => {
@@ -925,6 +1055,12 @@ export function AdvancedSearchDrawer({
             serverMetadata?.rank,
           databaseOrder:
             serverMetadata?.order,
+          fullTextRank:
+            serverMetadata?.fullTextRank,
+          fuzzyRank:
+            serverMetadata?.fuzzyRank,
+          matchType:
+            serverMetadata?.matchType,
           headline:
             serverMetadata?.headline,
         };
@@ -980,6 +1116,31 @@ export function AdvancedSearchDrawer({
     sortMode,
     statusFilter,
     tokens,
+  ]);
+
+  const suggestedQuery = useMemo(() => {
+    if (
+      searchSource !== "supabase" ||
+      !normalizedQuery
+    ) {
+      return "";
+    }
+
+    const suggestion = results.find(
+      (result) =>
+        (result.matchType === "fuzzy" ||
+          result.matchType === "prefix" ||
+          result.matchType ===
+            "alternate") &&
+        normalizeSearchText(result.word) !==
+          normalizedQuery
+    );
+
+    return suggestion?.word ?? "";
+  }, [
+    normalizedQuery,
+    results,
+    searchSource,
   ]);
 
   const resultStats = useMemo(() => {
@@ -1271,10 +1432,10 @@ export function AdvancedSearchDrawer({
 
             <p className="text-xs leading-5 text-neutral-500">
               {searchSource === "supabase"
-                ? "Results are ranked by the Alpha 4.1 database index."
+                ? "Full-text, prefix, and typo-tolerant ranking are active."
                 : searchSource === "fallback"
-                ? "Using browser search so partial terms and temporary RPC failures still work."
-                : "Type a query to use the Supabase full-text index."}
+                ? "Using browser search because the smart RPC returned no candidates or is unavailable."
+                : "Type a query to use full-text and typo-tolerant Supabase search."}
             </p>
           </div>
 
@@ -1326,6 +1487,31 @@ export function AdvancedSearchDrawer({
             </p>
           </div>
         </section>
+
+        {suggestedQuery && (
+          <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-orange-400/20 bg-orange-400/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-200/70">
+                Search suggestion
+              </p>
+
+              <p className="mt-1 font-black text-orange-50">
+                Did you mean “{suggestedQuery}”?
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setQuery(suggestedQuery);
+                setMatchMode("all");
+              }}
+              className="rounded-xl bg-orange-200 px-4 py-2 text-sm font-black text-orange-950 hover:bg-orange-100"
+            >
+              Search {suggestedQuery}
+            </button>
+          </section>
+        )}
 
         <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-4">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -1384,7 +1570,10 @@ export function AdvancedSearchDrawer({
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="truncate text-lg font-black text-white">
-                        {result.word}
+                        {renderHighlightedText(
+                          result.word,
+                          query
+                        )}
                       </p>
 
                       <p className="mt-1 text-xs text-neutral-500">
@@ -1394,12 +1583,25 @@ export function AdvancedSearchDrawer({
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                      {searchSource === "supabase" &&
+                        result.matchType && (
+                          <span
+                            className={`rounded-full border px-2 py-1 text-[10px] font-black ${getMatchTypeClasses(
+                              result.matchType
+                            )}`}
+                          >
+                            {getMatchTypeLabel(
+                              result.matchType
+                            )}
+                          </span>
+                        )}
+
                       {normalizedQuery &&
                         sortMode === "relevance" && (
                           <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-black text-neutral-400">
                             {searchSource === "supabase" &&
                             typeof result.databaseRank === "number"
-                              ? `DB ${result.databaseRank.toFixed(4)}`
+                              ? `Rank ${result.databaseRank.toFixed(3)}`
                               : `${result.score} pts`}
                           </span>
                         )}
@@ -1418,8 +1620,31 @@ export function AdvancedSearchDrawer({
                   </div>
 
                   <p className="mt-4 text-sm leading-6 text-neutral-400">
-                    {getPreview(result)}
+                    {renderHighlightedText(
+                      getResultPreview(result),
+                      query
+                    )}
                   </p>
+
+                  {searchSource === "supabase" &&
+                    typeof result.fuzzyRank ===
+                      "number" &&
+                    result.fuzzyRank > 0 && (
+                      <p className="mt-2 text-xs font-bold text-neutral-600">
+                        Similarity{" "}
+                        {Math.round(
+                          result.fuzzyRank * 100
+                        )}
+                        %
+                        {typeof result.fullTextRank ===
+                          "number" &&
+                          result.fullTextRank > 0
+                          ? ` · Full-text ${result.fullTextRank.toFixed(
+                              4
+                            )}`
+                          : ""}
+                      </p>
+                    )}
 
                   <div className="mt-4 flex flex-wrap gap-2">
                     {result.partOfSpeech.map(
@@ -1454,15 +1679,14 @@ export function AdvancedSearchDrawer({
 
         <div className="mt-6 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
           <p className="font-black text-yellow-100">
-            Alpha 4.2 note
+            Alpha 4.3 note
           </p>
 
           <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-            Advanced Search now calls the Supabase
-            full-text RPC after a short debounce and keeps
-            the browser search as a fallback for partial
-            terms, zero-result prefix searches, and temporary
-            connection errors.
+            Search now combines weighted full-text rank,
+            exact-word boosts, prefix discovery, trigram typo
+            tolerance, highlighted matches, and a local
+            browser fallback.
           </p>
         </div>
       </aside>

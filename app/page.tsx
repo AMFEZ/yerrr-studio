@@ -73,7 +73,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 4.2";
+const APP_VERSION = "Alpha 4.3";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;

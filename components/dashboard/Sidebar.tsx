@@ -56,7 +56,7 @@ type NavItem = {
   action?: () => void;
 };
 
-const VERSION_LABEL = "Alpha 4.2";
+const VERSION_LABEL = "Alpha 4.3";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -677,16 +677,16 @@ export function Sidebar(props: SidebarProps) {
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-zinc-50 p-3">
-                <p className="text-sm font-bold text-zinc-900">
-                  Current: Advanced Search
-                </p>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+  <p className="text-sm font-bold text-zinc-900">
+    Current: Smart Search Ranking
+  </p>
 
-                <p className="mt-1 text-xs leading-5 text-zinc-500">
-                  Search fields, filters, matching modes, ranking, and
-                  discovery tools.
-                </p>
-              </div>
+  <p className="mt-1 text-xs leading-5 text-zinc-500">
+    Full-text ranking, typo tolerance, prefix discovery, and
+    highlighted matches.
+  </p>
+</div>
 
               <div className="rounded-2xl border border-zinc-200 bg-white p-3">
                 <p className="text-sm font-bold text-zinc-900">
