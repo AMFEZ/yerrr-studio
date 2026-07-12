@@ -7,6 +7,7 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { Entry, EntryStatus } from "@/types/entry";
 import { entryStatusOptions } from "@/types/entry";
 import { useEntries } from "@/hooks/useEntries";
@@ -26,6 +27,9 @@ import { CloudGraphDrawer } from "@/components/concepts/CloudGraphDrawer";
 import { CloudConceptEditorDrawer } from "@/components/concepts/CloudConceptEditorDrawer";
 import { CloudRelationshipEditorDrawer } from "@/components/relationships/CloudRelationshipEditorDrawer";
 import { AIAssistantDrawer } from "@/components/ai/AIAssistantDrawer";
+import { AIEditorialHandoffPanel } from "@/components/ai/AIEditorialHandoffPanel";
+import type { AIEditorialHandoff } from "@/types/aiEditorial";
+import { createClient } from "@/lib/supabase/client";
 
 type WorkspaceMode =
   | "all"
@@ -36,6 +40,11 @@ type WorkspaceMode =
   | "trash";
 
 type ToastType = "success" | "error" | "info";
+
+type AuthStatus =
+  | "checking"
+  | "authenticated"
+  | "signed-out";
 
 type ToastState = {
   id: number;
@@ -74,7 +83,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.4";
+const APP_VERSION = "Alpha 5.5";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -274,6 +283,8 @@ function getArrayLength(value: unknown) {
 }
 
 export default function Home() {
+  const router = useRouter();
+
   const {
     entries,
     trashEntries,
@@ -297,6 +308,13 @@ export default function Home() {
     trashCount,
     isLoading,
   } = useEntries();
+
+  const [authStatus, setAuthStatus] =
+    useState<AuthStatus>("checking");
+  const [userEmail, setUserEmail] =
+    useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] =
+    useState(false);
 
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
   const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
@@ -323,10 +341,86 @@ export default function Home() {
   const [isCloudGraphOpen, setIsCloudGraphOpen] = useState(false);
   const [isCloudConceptEditorOpen, setIsCloudConceptEditorOpen] = useState(false);
   const [isCloudRelationshipEditorOpen, setIsCloudRelationshipEditorOpen] = useState(false);
-const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
-useEffect(() => {
-  setIsHydrated(true);
-}, []);
+  const [isAIAssistantOpen, setIsAIAssistantOpen] =
+    useState(false);
+  const [
+    aiEditorialHandoff,
+    setAIEditorialHandoff,
+  ] = useState<AIEditorialHandoff | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!aiEditorialHandoff) {
+      return;
+    }
+
+    if (
+      !selectedEntry ||
+      String(selectedEntry.id) !==
+        aiEditorialHandoff.entryId
+    ) {
+      setAIEditorialHandoff(null);
+    }
+  }, [
+    aiEditorialHandoff,
+    selectedEntry,
+  ]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let isMounted = true;
+
+    async function checkCurrentUser() {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (!isMounted) return;
+
+      if (error || !user) {
+        setUserEmail(null);
+        setAuthStatus("signed-out");
+        router.replace("/login");
+        return;
+      }
+
+      setUserEmail(user.email ?? null);
+      setAuthStatus("authenticated");
+    }
+
+    void checkCurrentUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!isMounted) return;
+
+        if (session?.user) {
+          setUserEmail(
+            session.user.email ?? null,
+          );
+          setAuthStatus("authenticated");
+          return;
+        }
+
+        setUserEmail(null);
+        setAuthStatus("signed-out");
+        router.replace("/login");
+      },
+    );
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   useEffect(() => {
     try {
@@ -353,6 +447,42 @@ useEffect(() => {
   useEffect(() => {
     setRenderLimit(INITIAL_RENDER_LIMIT);
   }, [workspaceMode, search]);
+
+  async function handleLogout() {
+    if (isLoggingOut) return;
+
+    const confirmed = window.confirm(
+      "Log out of YERRR Studio?",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsLoggingOut(true);
+
+      const supabase = createClient();
+      const { error } =
+        await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      setUserEmail(null);
+      setAuthStatus("signed-out");
+
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      showToast(
+        "error",
+        "Logout failed",
+        getErrorMessage(error),
+      );
+
+      setIsLoggingOut(false);
+    }
+  }
 
   function addActivity(type: ActivityType, title: string, detail?: string) {
     const activityItem: ActivityItem = {
@@ -1062,27 +1192,64 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     ["trash", "Trash"],
   ];
 
-if (!isHydrated) {
-  return (
-    <main className="min-h-screen bg-neutral-950 text-white">
-      <div className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-6">
-        <div className="rounded-3xl border border-neutral-800 bg-neutral-900 px-8 py-7 text-center shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-yellow-400">
-            YERRR Studio
-          </p>
+  if (
+    !isHydrated ||
+    authStatus === "checking"
+  ) {
+    return (
+      <main className="min-h-screen bg-neutral-950 text-white">
+        <div className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-6">
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-900 px-8 py-7 text-center shadow-2xl">
+            <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
 
-          <p className="mt-3 text-lg font-black text-white">
-            Loading workspace...
-          </p>
+            <p className="mt-5 text-xs font-black uppercase tracking-[0.3em] text-yellow-400">
+              YERRR Studio
+            </p>
 
-          <p className="mt-2 text-sm text-neutral-500">
-            Preparing entries and Knowledge Graph tools.
-          </p>
+            <p className="mt-3 text-lg font-black text-white">
+              Checking session...
+            </p>
+
+            <p className="mt-2 text-sm text-neutral-500">
+              Verifying your Supabase login before loading the workspace.
+            </p>
+          </div>
         </div>
-      </div>
-    </main>
-  );
-}
+      </main>
+    );
+  }
+
+  if (authStatus === "signed-out") {
+    return (
+      <main className="min-h-screen bg-neutral-950 text-white">
+        <div className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-6">
+          <div className="max-w-md rounded-3xl border border-neutral-800 bg-neutral-900 px-8 py-7 text-center shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-yellow-400">
+              YERRR Studio
+            </p>
+
+            <p className="mt-3 text-xl font-black text-white">
+              Sign-in required
+            </p>
+
+            <p className="mt-2 text-sm leading-6 text-neutral-500">
+              Redirecting to the login page. The empty dashboard will no longer appear while signed out.
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                router.replace("/login")
+              }
+              className="mt-5 rounded-xl bg-yellow-400 px-5 py-3 text-sm font-black text-black hover:bg-yellow-300"
+            >
+              Go to Login
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
   <main className="min-h-screen bg-neutral-950 text-white lg:flex">
@@ -1122,6 +1289,10 @@ if (!isHydrated) {
   onOpenAIAssistant={() =>
     setIsAIAssistantOpen(true)
   }
+  userEmail={userEmail}
+  onLogout={() => {
+    void handleLogout();
+  }}
 />
 
     <section className="flex-1">
@@ -1824,7 +1995,38 @@ if (!isHydrated) {
   entries={entries}
   onOpenEntry={(entry) => {
     setIsAIAssistantOpen(false);
+    setAIEditorialHandoff(null);
     setSelectedEntry(entry);
+  }}
+  onSendApprovedPlan={(handoff) => {
+    const entry = entries.find(
+      (item) =>
+        String(item.id) ===
+        handoff.entryId
+    );
+
+    if (!entry) {
+      showToast(
+        "error",
+        "Entry not found",
+        "The approved AI plan no longer matches an active lexicon entry."
+      );
+      return;
+    }
+
+    setIsAIAssistantOpen(false);
+    setAIEditorialHandoff(handoff);
+    setSelectedEntry(entry);
+
+    showToast(
+      "success",
+      "AI plan opened",
+      `${handoff.approvedEdits.length} approved change${
+        handoff.approvedEdits.length === 1
+          ? ""
+          : "s"
+      } ready for manual verification.`
+    );
   }}
 />
 
@@ -1947,6 +2149,18 @@ if (!isHydrated) {
           onDelete={handleDeleteEntry}
         />
       )}
+
+      {selectedEntry &&
+        aiEditorialHandoff &&
+        String(selectedEntry.id) ===
+          aiEditorialHandoff.entryId && (
+          <AIEditorialHandoffPanel
+            handoff={aiEditorialHandoff}
+            onClose={() =>
+              setAIEditorialHandoff(null)
+            }
+          />
+        )}
 
       {toast && (
         <div className="fixed bottom-24 right-4 z-[60] w-[calc(100%-2rem)] max-w-sm md:bottom-5 md:right-5 md:w-[calc(100%-2.5rem)]">

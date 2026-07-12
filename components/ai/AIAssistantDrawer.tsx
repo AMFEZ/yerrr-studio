@@ -9,12 +9,16 @@ import {
 } from "react";
 
 import type { Entry } from "@/types/entry";
+import type { AIEditorialHandoff } from "@/types/aiEditorial";
 
 type AIAssistantDrawerProps = {
   isOpen: boolean;
   onClose: () => void;
   entries?: Entry[];
   onOpenEntry?: (entry: Entry) => void;
+  onSendApprovedPlan?: (
+    handoff: AIEditorialHandoff,
+  ) => void;
 };
 
 type AssistantMode = "chat" | "review";
@@ -413,6 +417,39 @@ function getStoredDecisionCounts(item: StoredEntryReview) {
   );
 }
 
+function buildEditorialHandoff(
+  review: EntryReview,
+  decisions: Record<
+    string,
+    ReviewDecision
+  >,
+  sourceReviewId?: string,
+): AIEditorialHandoff {
+  const approvedEdits =
+    review.suggestedEdits.filter(
+      (edit, index) =>
+        decisions[
+          getSuggestionKey(edit, index)
+        ] === "approved",
+    );
+
+  return {
+    id: createId(),
+    createdAt:
+      new Date().toISOString(),
+    sourceReviewId,
+    entryId: review.entryId,
+    entryWord: review.entryWord,
+    qualityScore:
+      review.qualityScore,
+    publishReadiness:
+      review.publishReadiness,
+    approvedEdits,
+    verificationChecklist:
+      review.verificationChecklist,
+  };
+}
+
 function formatApprovedEditsAsText(
   review: EntryReview,
   decisions: Record<string, ReviewDecision>,
@@ -532,6 +569,7 @@ export function AIAssistantDrawer({
   onClose,
   entries = [],
   onOpenEntry,
+  onSendApprovedPlan,
 }: AIAssistantDrawerProps) {
   const [mode, setMode] = useState<AssistantMode>("chat");
 
@@ -1066,6 +1104,60 @@ export function AIAssistantDrawer({
     updateDecisionHistory(nextDecisions);
   }
 
+  function sendCurrentPlanToEditor() {
+    if (
+      !review ||
+      !onSendApprovedPlan
+    ) {
+      return;
+    }
+
+    const handoff =
+      buildEditorialHandoff(
+        review,
+        reviewDecisions,
+        activeReviewHistoryId ||
+          undefined,
+      );
+
+    if (
+      handoff.approvedEdits.length === 0
+    ) {
+      return;
+    }
+
+    onSendApprovedPlan(handoff);
+  }
+
+  function sendStoredPlanToEditor(
+    item: StoredEntryReview,
+  ) {
+    if (!onSendApprovedPlan) {
+      return;
+    }
+
+    const decisions =
+      item.decisions ??
+      createPendingDecisions(
+        item.review,
+      );
+
+    const handoff =
+      buildEditorialHandoff(
+        item.review,
+        decisions,
+        item.id,
+      );
+
+    if (
+      handoff.approvedEdits.length === 0
+    ) {
+      return;
+    }
+
+    onSendApprovedPlan(handoff);
+  }
+
   function exportApprovedPlan() {
     if (!review) return;
 
@@ -1083,7 +1175,7 @@ export function AIAssistantDrawer({
       )}-${dateSlug}.json`,
       {
         app: "YERRR Studio",
-        version: "Alpha 5.4",
+        version: "Alpha 5.5",
         exportType: "approved_ai_edit_plan",
         exportedAt: new Date().toISOString(),
         entryId: review.entryId,
@@ -1114,7 +1206,7 @@ export function AIAssistantDrawer({
       )}-${dateSlug}.json`,
       {
         app: "YERRR Studio",
-        version: "Alpha 5.4",
+        version: "Alpha 5.5",
         exportType: "approved_ai_edit_plan",
         exportedAt: new Date().toISOString(),
         sourceReviewId: item.id,
@@ -1156,7 +1248,7 @@ export function AIAssistantDrawer({
 
     downloadJsonFile(`yerrr-ai-review-history-${dateSlug}.json`, {
       app: "YERRR Studio",
-      version: "Alpha 5.4",
+      version: "Alpha 5.5",
       exportType: "ai_entry_review_history",
       exportedAt: new Date().toISOString(),
       reviewCount: reviewHistory.length,
@@ -1265,7 +1357,7 @@ export function AIAssistantDrawer({
                 <div className="space-y-5">
                   <section className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5">
                     <p className="font-black text-yellow-100">
-                      Alpha 5.4 lexicon chat
+                      Alpha 5.5 lexicon chat
                     </p>
 
                     <p className="mt-2 text-sm leading-6 text-yellow-100/70">
@@ -1460,14 +1552,14 @@ export function AIAssistantDrawer({
             <div className="space-y-5">
               <section className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5">
                 <p className="font-black text-yellow-100">
-                  Alpha 5.4 editorial review queue
+                  Alpha 5.5 editorial review queue
                 </p>
 
                 <p className="mt-2 text-sm leading-6 text-yellow-100/70">
                   Review one entry at a time, approve or reject suggestions,
                   then track every report in the AI editorial queue. Ready plans
-                  can be copied or exported for manual verification in the Entry
-                  Editor. Nothing writes to Supabase automatically.
+                  can be sent directly into a floating editor handoff panel for
+                  manual verification. Nothing writes to Supabase automatically.
                 </p>
               </section>
 
@@ -1722,6 +1814,24 @@ export function AIAssistantDrawer({
                                 >
                                   Export plan
                                 </button>
+
+                                {entryById.has(item.review.entryId) &&
+                                  onSendApprovedPlan && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        sendStoredPlanToEditor(
+                                          item,
+                                        )
+                                      }
+                                      disabled={
+                                        counts.approved === 0
+                                      }
+                                      className="rounded-xl bg-green-400 px-3 py-2 text-xs font-black text-black hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      Send to editor
+                                    </button>
+                                  )}
 
                                 {entryById.has(item.review.entryId) &&
                                   onOpenEntry && (
@@ -2056,7 +2166,7 @@ export function AIAssistantDrawer({
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
                       <button
                         type="button"
                         onClick={() =>
@@ -2080,6 +2190,18 @@ export function AIAssistantDrawer({
                         className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Export approved plan
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={sendCurrentPlanToEditor}
+                        disabled={
+                          reviewDecisionCounts.approved === 0 ||
+                          !onSendApprovedPlan
+                        }
+                        className="rounded-xl bg-green-400 px-4 py-3 text-sm font-black text-black hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Send to editor
                       </button>
                     </div>
 
@@ -2261,10 +2383,10 @@ export function AIAssistantDrawer({
                       Human approval required
                     </p>
                     <p className="mt-2 text-sm leading-6 text-yellow-100/70">
-                      Approval decisions and exported plans are editorial
-                      handoff tools only. They are stored locally and never edit
-                      Supabase. Open the Entry Editor, verify every approved
-                      change, then save manually.
+                      Approval decisions and the editor handoff panel are
+                      editorial guidance only. They are stored locally and never
+                      edit Supabase. Verify every approved change in the Entry
+                      Editor, then save manually.
                     </p>
                   </section>
                 </>
