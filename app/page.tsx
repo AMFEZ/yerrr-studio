@@ -32,6 +32,11 @@ import { AIMissingFieldsPanel } from "@/components/ai/AIMissingFieldsPanel";
 import { AISemanticDuplicatePanel } from "@/components/ai/AISemanticDuplicatePanel";
 import { AIBatchTriagePanel } from "@/components/ai/AIBatchTriagePanel";
 import { AIRelationshipSuggestionsPanel } from "@/components/ai/AIRelationshipSuggestionsPanel";
+import { AIRelationshipHandoffPanel } from "@/components/ai/AIRelationshipHandoffPanel";
+
+import type {
+  AIRelationshipHandoff,
+} from "@/types/aiRelationshipHandoff";
 import type { AIEditorialHandoff } from "@/types/aiEditorial";
 import { createClient } from "@/lib/supabase/client";
 
@@ -87,7 +92,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.9";
+const APP_VERSION = "Alpha 5.10";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -374,6 +379,13 @@ const [
   ] = useState<AIEditorialHandoff | null>(
     null,
   );
+
+const [
+  aiRelationshipHandoff,
+  setAIRelationshipHandoff,
+] = useState<AIRelationshipHandoff | null>(
+  null,
+);
 
 useEffect(() => {
   setIsAIMissingFieldsOpen(false);
@@ -1312,9 +1324,13 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   onOpenCloudConceptEditor={() =>
     setIsCloudConceptEditorOpen(true)
   }
-  onOpenCloudRelationshipEditor={() =>
-    setIsCloudRelationshipEditorOpen(true)
-  }
+  onOpenCloudRelationshipEditor={() => {
+  setAIRelationshipHandoff(null);
+
+  setIsCloudRelationshipEditorOpen(
+    true,
+  );
+}}
   onOpenAIAssistant={() =>
     setIsAIAssistantOpen(true)
   }
@@ -2114,6 +2130,11 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       setIsAIRelationshipSuggestionsOpen(
         false,
       );
+}}
+      onSendApprovedPlan={(handoff) => {
+      setIsAIRelationshipSuggestionsOpen(
+        false,
+      );
 
       setIsCloudRelationshipEditorOpen(
         true,
@@ -2123,21 +2144,47 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
 )}
 
 <CloudRelationshipEditorDrawer
-  isOpen={isCloudRelationshipEditorOpen}
-  onClose={() =>
-    setIsCloudRelationshipEditorOpen(false)
+  isOpen={
+    isCloudRelationshipEditorOpen
   }
+  onClose={() => {
+    setIsCloudRelationshipEditorOpen(
+      false,
+    );
+
+    setAIRelationshipHandoff(null);
+  }}
   entries={entries}
   onOpenEntry={(entry) => {
-    setIsCloudRelationshipEditorOpen(false);
+    setIsCloudRelationshipEditorOpen(
+      false,
+    );
+
+    setAIRelationshipHandoff(null);
+
     setSelectedEntry(entry);
   }}
   onGraphChanged={() => {
     setGraphRevision(
-      (currentRevision) => currentRevision + 1
+      (currentRevision) =>
+        currentRevision + 1,
     );
   }}
 />
+
+{isCloudRelationshipEditorOpen &&
+  aiRelationshipHandoff && (
+    <AIRelationshipHandoffPanel
+      handoff={
+        aiRelationshipHandoff
+      }
+      onClose={() =>
+        setAIRelationshipHandoff(
+          null,
+        )
+      }
+    />
+  )}
 
 <CloudConceptEditorDrawer
   isOpen={isCloudConceptEditorOpen}

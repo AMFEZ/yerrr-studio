@@ -17,11 +17,19 @@ import type {
   AIRelationshipType,
 } from "@/types/aiRelationships";
 
+import type {
+  AIRelationshipHandoff,
+} from "@/types/aiRelationshipHandoff";
+
 type AIRelationshipSuggestionsPanelProps = {
   entries: Entry[];
   onClose: () => void;
   onOpenEntry?: (entry: Entry) => void;
   onOpenRelationshipEditor?: () => void;
+
+  onSendApprovedPlan?: (
+    handoff: AIRelationshipHandoff,
+  ) => void;
 };
 
 type ScoredCandidate = {
@@ -683,11 +691,39 @@ function formatApprovedPlan(
   ].join("\n");
 }
 
+function createRelationshipHandoff(
+  result:
+    AIRelationshipSuggestionResult,
+
+  approvedSuggestions:
+    AIRelationshipSuggestion[],
+): AIRelationshipHandoff {
+  return {
+    id: `relationship-handoff-${Date.now()}`,
+
+    createdAt:
+      new Date().toISOString(),
+
+    sourceEntryId:
+      result.sourceEntryId,
+
+    sourceEntryWord:
+      result.sourceEntryWord,
+
+    approvedRelationships:
+      approvedSuggestions,
+
+    verificationChecklist:
+      result.verificationChecklist,
+  };
+}
+
 export function AIRelationshipSuggestionsPanel({
   entries,
   onClose,
   onOpenEntry,
   onOpenRelationshipEditor,
+  onSendApprovedPlan,
 }: AIRelationshipSuggestionsPanelProps) {
   const [search, setSearch] =
     useState("");
@@ -1057,54 +1093,66 @@ export function AIRelationshipSuggestionsPanel({
   }
 
   async function copyApprovedPlan(
-    openRelationshipEditor = false,
+  openRelationshipEditor = false,
+) {
+  if (
+    !result ||
+    approvedSuggestions.length === 0
   ) {
-    if (
-      !result ||
-      approvedSuggestions.length ===
-        0
-    ) {
-      return;
-    }
+    return;
+  }
 
-    await copyText(
-      "approved-plan",
-      formatApprovedPlan(
-        result,
-        approvedSuggestions,
-      ),
+  const handoff =
+    createRelationshipHandoff(
+      result,
+      approvedSuggestions,
     );
 
-    if (
-      openRelationshipEditor &&
-      onOpenRelationshipEditor
-    ) {
-      onClose();
-      onOpenRelationshipEditor();
-    }
-  }
+  await copyText(
+    "approved-plan",
+    formatApprovedPlan(
+      result,
+      approvedSuggestions,
+    ),
+  );
 
-  function openEntry(entry: Entry) {
-    onClose();
-    onOpenEntry?.(entry);
-  }
-
-  function openTargetEntry(
-    suggestion:
-      AIRelationshipSuggestion,
+  if (
+    openRelationshipEditor &&
+    onSendApprovedPlan
   ) {
-    const targetEntry =
-      entries.find(
-        (entry) =>
-          String(entry.id) ===
-          suggestion.targetEntryId,
-      );
-
-    if (targetEntry) {
-      openEntry(targetEntry);
-    }
+    onClose();
+    onSendApprovedPlan(handoff);
+    return;
   }
 
+  if (
+    openRelationshipEditor &&
+    onOpenRelationshipEditor
+  ) {
+    onClose();
+    onOpenRelationshipEditor();
+  }
+}
+function openEntry(entry: Entry) {
+  onClose();
+  onOpenEntry?.(entry);
+}
+
+function openTargetEntry(
+  suggestion: AIRelationshipSuggestion,
+) {
+  const targetEntry = entries.find(
+    (entry) =>
+      String(entry.id) ===
+      String(suggestion.targetEntryId),
+  );
+
+  if (!targetEntry) {
+    return;
+  }
+
+  openEntry(targetEntry);
+}
   return (
     <div
       className="fixed inset-0 z-[83] bg-black/80 backdrop-blur-sm"
@@ -1211,69 +1259,50 @@ export function AIRelationshipSuggestionsPanel({
               </select>
 
               {selectedEntry && (
-                <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-600">
-                        Source
-                      </p>
+  <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-600">
+          Source
+        </p>
 
-                      <p className="mt-1 text-xl font-black text-white">
-                        {
-                          selectedEntry.word
-                        }
-                      </p>
+        <p className="mt-1 text-xl font-black text-white">
+          {selectedEntry.word}
+        </p>
 
-                      <p className="mt-1 text-xs text-neutral-500">
-                        {
-                          scoredCandidates.length
-                        }{" "}
-                        candidate entries
-                      </p>
-                    </div>
+        <p className="mt-1 text-xs text-neutral-500">
+          {scoredCandidates.length} candidate entries
+        </p>
+      </div>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        openEntry(
-                          selectedEntry,
-                        )
-                      }
-                      className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-black text-neutral-300 hover:border-emerald-400 hover:text-emerald-200"
-                    >
-                      Open source
-                    </button>
-                  </div>
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          onOpenEntry?.(selectedEntry);
+        }}
+        className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-black text-neutral-300 hover:border-emerald-400 hover:text-emerald-200"
+      >
+        Open source
+      </button>
+    </div>
 
-                  {scoredCandidates.length >
-                    0 && (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {scoredCandidates
-                        .slice(0, 10)
-                        .map(
-                          (candidate) => (
-                            <span
-                              key={
-                                candidate
-                                  .entry.id
-                              }
-                              className="rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-[11px] font-bold text-neutral-400"
-                            >
-                              {
-                                candidate
-                                  .entry.word
-                              }{" "}
-                              ·{" "}
-                              {
-                                candidate.score
-                              }
-                            </span>
-                          ),
-                        )}
-                    </div>
-                  )}
-                </div>
-              )}
+    {scoredCandidates.length > 0 && (
+      <div className="mt-4 flex flex-wrap gap-2">
+        {scoredCandidates
+          .slice(0, 10)
+          .map((candidate) => (
+            <span
+              key={candidate.entry.id}
+              className="rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-[11px] font-bold text-neutral-400"
+            >
+              {candidate.entry.word} · {candidate.score}
+            </span>
+          ))}
+      </div>
+    )}
+  </div>
+)}
 
               <button
                 type="button"
@@ -1629,16 +1658,27 @@ export function AIRelationshipSuggestionsPanel({
                                 </button>
 
                                 <button
-                                  type="button"
-                                  onClick={() =>
-                                    openTargetEntry(
-                                      suggestion,
-                                    )
-                                  }
-                                  className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-black text-neutral-300 hover:border-cyan-400 hover:text-cyan-200"
-                                >
-                                  Open target
-                                </button>
+  type="button"
+  onClick={() => {
+    const targetEntry = entries.find(
+      (entry) =>
+        String(entry.id) ===
+        String(
+          suggestion.targetEntryId,
+        ),
+    );
+
+    if (!targetEntry) {
+      return;
+    }
+
+    onClose();
+    onOpenEntry?.(targetEntry);
+  }}
+  className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-black text-neutral-300 hover:border-cyan-400 hover:text-cyan-200"
+>
+  Open target
+</button>
                               </div>
                             </article>
                           );
@@ -1723,13 +1763,15 @@ export function AIRelationshipSuggestionsPanel({
                 )
               }
               disabled={
-                approvedSuggestions.length ===
-                  0 ||
-                !onOpenRelationshipEditor
-              }
+  approvedSuggestions.length === 0 ||
+  (
+    !onSendApprovedPlan &&
+    !onOpenRelationshipEditor
+  )
+}
               className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-30"
             >
-              Copy + open relationships
+              Send to relationship editor
             </button>
 
             <button
