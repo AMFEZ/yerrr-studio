@@ -34,6 +34,14 @@ import { AIBatchTriagePanel } from "@/components/ai/AIBatchTriagePanel";
 import { AIRelationshipSuggestionsPanel } from "@/components/ai/AIRelationshipSuggestionsPanel";
 import { AIRelationshipHandoffPanel } from "@/components/ai/AIRelationshipHandoffPanel";
 import { AIWorkflowCenterPanel } from "@/components/ai/AIWorkflowCenterPanel";
+import { ContentCompletionDashboard } from "@/components/content/ContentCompletionDashboard";
+import { EditorialQualityDashboard } from "@/components/quality/EditorialQualityDashboard";
+import { PublicReadinessDashboard } from "@/components/public/PublicReadinessDashboard";
+import { PublicPublishingControlsPanel } from "@/components/public/PublicPublishingControlsPanel";
+import { usePublicEntrySettings } from "@/hooks/usePublicEntrySettings";
+
+import { StudioReleaseReadinessPanel } from "@/components/release/StudioReleaseReadinessPanel";
+import { StudioContentReadyPanel } from "@/components/release/StudioContentReadyPanel";
 
 import type {
   AIRelationshipHandoff,
@@ -93,7 +101,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.11";
+const APP_VERSION = "Alpha 5.16B";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -319,6 +327,15 @@ export default function Home() {
     isLoading,
   } = useEntries();
 
+const {
+  settingsByEntryId,
+  isLoading: isPublicSettingsLoading,
+  savingEntryId: publicSettingsSavingEntryId,
+  error: publicSettingsError,
+  refresh: refreshPublicSettings,
+  saveSettings: savePublicSettings,
+} = usePublicEntrySettings();
+
   const [authStatus, setAuthStatus] =
     useState<AuthStatus>("checking");
   const [userEmail, setUserEmail] =
@@ -391,6 +408,36 @@ const [
 const [
   isAIWorkflowCenterOpen,
   setIsAIWorkflowCenterOpen,
+] = useState(false);
+
+const [
+  isContentCompletionOpen,
+  setIsContentCompletionOpen,
+] = useState(false);
+
+const [
+  isEditorialQualityOpen,
+  setIsEditorialQualityOpen,
+] = useState(false);
+
+const [
+  isPublicReadinessOpen,
+  setIsPublicReadinessOpen,
+] = useState(false);
+
+const [
+  isPublishingControlsOpen,
+  setIsPublishingControlsOpen,
+] = useState(false);
+
+const [
+  isStudioReleaseReadinessOpen,
+  setIsStudioReleaseReadinessOpen,
+] = useState(false);
+
+const [
+  isStudioContentReadyOpen,
+  setIsStudioContentReadyOpen,
 ] = useState(false);
 
 useEffect(() => {
@@ -628,6 +675,40 @@ useEffect(() => {
       setWorkingLabel("");
     }
   }
+
+const entriesWithPublicSettings = useMemo(
+  () =>
+    entries.map((entry) => {
+      const settings =
+        settingsByEntryId[String(entry.id)];
+
+      if (!settings) {
+        return entry;
+      }
+
+      return {
+        ...entry,
+
+        // Use non-conflicting publishing aliases.
+        isPublic:
+          settings.visibility === "public",
+        publicVisibility:
+          settings.visibility,
+
+        isFeatured:
+          settings.isFeatured,
+        displayOrder:
+          settings.displayOrder,
+        publicTitle:
+          settings.publicTitle,
+        publicSummary:
+          settings.publicSummary,
+        publishedAt:
+          settings.publishedAt,
+      } as unknown as Entry;
+    }),
+  [entries, settingsByEntryId],
+);
 
   const duplicateMatchesByEntryId = useMemo(() => {
     return buildDuplicateMatches(entries);
@@ -1373,6 +1454,79 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     🧠 AI Center
   </button>
 
+<button
+  type="button"
+  onClick={() =>
+    setIsContentCompletionOpen(true)
+  }
+  disabled={isWorking || isLoading}
+  className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-yellow-400 hover:text-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  📊 Completion
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    setIsEditorialQualityOpen(true)
+  }
+  disabled={isWorking || isLoading}
+  className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-red-400 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  🛡️ Quality
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    setIsPublicReadinessOpen(true)
+  }
+  disabled={isWorking || isLoading}
+  className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-purple-400 hover:text-purple-300 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  🌐 Public Ready
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    setIsPublishingControlsOpen(
+      true,
+    )
+  }
+  disabled={
+    isWorking ||
+    isLoading
+  }
+  className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-purple-400 hover:text-purple-300 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  🗂️ Publishing
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    setIsStudioReleaseReadinessOpen(
+      true,
+    )
+  }
+  disabled={isWorking || isLoading}
+  className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  🚦 Release
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    setIsStudioContentReadyOpen(true)
+  }
+  disabled={isWorking || isLoading}
+  className="rounded-xl border border-green-400/30 bg-green-400/10 px-4 py-4 font-black text-green-200 transition hover:border-green-400 hover:bg-green-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  🏁 Content Ready
+</button>
+
   <button
     type="button"
     onClick={() =>
@@ -2106,79 +2260,98 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
 
 {isAIWorkflowCenterOpen && (
   <AIWorkflowCenterPanel
-    entries={entries}
-    reviewQueueCount={
-      reviewQueueCount
-    }
-    draftCount={draftCount}
-    verifiedCount={verifiedCount}
-    publishedCount={publishedCount}
-    duplicateCount={
-      duplicateMatchesByEntryId.size
-    }
+  isOpen={isAIWorkflowCenterOpen}
+  onClose={() =>
+    setIsAIWorkflowCenterOpen(false)
+  }
+  onOpenAIAssistant={() =>
+    setIsAIAssistantOpen(true)
+  }
+  onOpenMissingFields={() =>
+    setIsAIMissingFieldsOpen(true)
+  }
+  onOpenBatchTriage={() =>
+    setIsAIBatchTriageOpen(true)
+  }
+  onOpenSemanticDuplicates={() =>
+    setIsAISemanticDuplicatesOpen(true)
+  }
+  onOpenRelationshipSuggestions={() =>
+    setIsAIRelationshipSuggestionsOpen(true)
+  }
+  entries={entries}
+  selectedEntry={selectedEntry}
+  duplicateCandidateCount={
+    duplicateMatchesByEntryId.size
+  }
+/>
+)}
+
+{isStudioContentReadyOpen && (
+  <StudioContentReadyPanel
+    isOpen={isStudioContentReadyOpen}
     onClose={() =>
-      setIsAIWorkflowCenterOpen(
-        false,
-      )
+      setIsStudioContentReadyOpen(false)
     }
-    onOpenAssistant={() => {
-      setIsAIWorkflowCenterOpen(
-        false,
-      );
-
-      setIsAIAssistantOpen(true);
-    }}
-    onOpenBatchTriage={() => {
-      setIsAIWorkflowCenterOpen(
-        false,
-      );
-
-      setWorkspaceMode("review");
-
-      setIsAIBatchTriageOpen(true);
-    }}
-    onOpenDuplicateReview={() => {
-      setIsAIWorkflowCenterOpen(
-        false,
-      );
-
-      setWorkspaceMode(
-        "duplicates",
-      );
-
-      setIsAISemanticDuplicatesOpen(
-        true,
-      );
-    }}
-    onOpenRelationshipSuggestions={() => {
-      setIsAIWorkflowCenterOpen(
-        false,
-      );
-
-      setWorkspaceMode("all");
-
-      setIsAIRelationshipSuggestionsOpen(
-        true,
-      );
-    }}
-    onOpenEntryForMissingFields={(
-      entry,
-    ) => {
-      setIsAIWorkflowCenterOpen(
-        false,
-      );
-
-      setAIEditorialHandoff(null);
-      setSelectedEntry(entry);
-
-      showToast(
-        "info",
-        "Entry opened",
-        `Click Fill missing fields to analyze ${entry.word}.`,
-      );
+    entries={entries}
+    settingsByEntryId={
+      settingsByEntryId
+    }
+    onOpenReleaseDashboard={() => {
+      setIsStudioContentReadyOpen(false);
+      setIsStudioReleaseReadinessOpen(true);
     }}
   />
 )}
+
+<StudioReleaseReadinessPanel
+  isOpen={
+    isStudioReleaseReadinessOpen
+  }
+  onClose={() =>
+    setIsStudioReleaseReadinessOpen(
+      false,
+    )
+  }
+  entries={entries}
+  settingsByEntryId={
+    settingsByEntryId
+  }
+/>
+
+<PublicPublishingControlsPanel
+  isOpen={
+    isPublishingControlsOpen
+  }
+  onClose={() =>
+    setIsPublishingControlsOpen(
+      false,
+    )
+  }
+  entries={entries}
+  settingsByEntryId={
+    settingsByEntryId
+  }
+  isLoading={
+    isPublicSettingsLoading
+  }
+  savingEntryId={
+    publicSettingsSavingEntryId
+  }
+  error={publicSettingsError}
+  onSaveSettings={
+    savePublicSettings
+  }
+  onRefresh={
+    refreshPublicSettings
+  }
+  onOpenEntry={(entry) => {
+    setIsPublishingControlsOpen(
+      false,
+    );
+    setSelectedEntry(entry);
+  }}
+/>
 
 <AIAssistantDrawer
   isOpen={isAIAssistantOpen}
@@ -2295,6 +2468,49 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       }
     />
   )}
+
+<PublicReadinessDashboard
+  isOpen={isPublicReadinessOpen}
+  onClose={() =>
+    setIsPublicReadinessOpen(false)
+  }
+  entries={entriesWithPublicSettings}
+  onOpenEntry={(entry) => {
+  const originalEntry =
+    entries.find(
+      (candidate) =>
+        String(candidate.id) ===
+        String(entry.id),
+    ) ?? entry;
+
+  setIsPublicReadinessOpen(false);
+  setSelectedEntry(originalEntry);
+}}
+/>
+
+<EditorialQualityDashboard
+  isOpen={isEditorialQualityOpen}
+  onClose={() =>
+    setIsEditorialQualityOpen(false)
+  }
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsEditorialQualityOpen(false);
+    setSelectedEntry(entry);
+  }}
+/>
+
+<ContentCompletionDashboard
+  isOpen={isContentCompletionOpen}
+  onClose={() =>
+    setIsContentCompletionOpen(false)
+  }
+  entries={entries}
+  onOpenEntry={(entry) => {
+    setIsContentCompletionOpen(false);
+    setSelectedEntry(entry);
+  }}
+/>
 
 <CloudConceptEditorDrawer
   isOpen={isCloudConceptEditorOpen}
