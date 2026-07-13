@@ -1,4 +1,8 @@
-import { createServerClient } from "@supabase/ssr";
+import {
+  createServerClient,
+  type CookieOptions,
+} from "@supabase/ssr";
+
 import {
   NextResponse,
   type NextRequest,
@@ -11,43 +15,69 @@ export async function proxy(
     request,
   });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env
-      .NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(
-            ({ name, value }) => {
-              request.cookies.set(
+  const supabaseKey =
+    process.env
+      .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env
+      .NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return response;
+  }
+
+  const supabase =
+    createServerClient(
+      supabaseUrl,
+      supabaseKey,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+
+          setAll(
+            cookiesToSet: Array<{
+              name: string;
+              value: string;
+              options: CookieOptions;
+            }>,
+          ) {
+            cookiesToSet.forEach(
+              ({
                 name,
                 value,
-              );
-            },
-          );
+              }) => {
+                request.cookies.set(
+                  name,
+                  value,
+                );
+              },
+            );
 
-          response = NextResponse.next({
-            request,
-          });
+            response = NextResponse.next({
+              request,
+            });
 
-          cookiesToSet.forEach(
-            ({ name, value, options }) => {
-              response.cookies.set(
+            cookiesToSet.forEach(
+              ({
                 name,
                 value,
                 options,
-              );
-            },
-          );
+              }) => {
+                response.cookies.set(
+                  name,
+                  value,
+                  options,
+                );
+              },
+            );
+          },
         },
       },
-    },
-  );
+    );
 
   const {
     data: { user },
@@ -57,14 +87,21 @@ export async function proxy(
     request.nextUrl.pathname;
 
   const isLoginRoute =
-    pathname === "/login" ||
-    pathname.startsWith("/login/");
+    pathname === "/login";
 
-  if (!user && !isLoginRoute) {
+  const isRecoveryRoute =
+    pathname === "/forgot-password" ||
+    pathname === "/update-password";
+
+  if (
+    !user &&
+    pathname === "/"
+  ) {
     const loginUrl =
       request.nextUrl.clone();
 
     loginUrl.pathname = "/login";
+    loginUrl.search = "";
     loginUrl.searchParams.set(
       "next",
       pathname,
@@ -75,7 +112,11 @@ export async function proxy(
     );
   }
 
-  if (user && isLoginRoute) {
+  if (
+    user &&
+    isLoginRoute &&
+    !isRecoveryRoute
+  ) {
     const studioUrl =
       request.nextUrl.clone();
 
@@ -94,6 +135,7 @@ export const config = {
   matcher: [
     "/",
     "/login",
-    "/api/ai-assistant/:path*",
+    "/forgot-password",
+    "/update-password",
   ],
 };

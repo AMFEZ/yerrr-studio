@@ -42,6 +42,7 @@ import { usePublicEntrySettings } from "@/hooks/usePublicEntrySettings";
 
 import { StudioReleaseReadinessPanel } from "@/components/release/StudioReleaseReadinessPanel";
 import { StudioContentReadyPanel } from "@/components/release/StudioContentReadyPanel";
+import { AccountSecurityPanel } from "@/components/account/AccountSecurityPanel";
 
 import type {
   AIRelationshipHandoff,
@@ -101,7 +102,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.16B";
+const APP_VERSION = "Alpha 5.16C";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -443,6 +444,11 @@ const [
 useEffect(() => {
   setIsAIMissingFieldsOpen(false);
 }, [selectedEntry?.id]);
+
+const [
+  isAccountSecurityOpen,
+  setIsAccountSecurityOpen,
+] = useState(false);
 
   useEffect(() => {
     if (!aiEditorialHandoff) {
@@ -1527,6 +1533,20 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   🏁 Content Ready
 </button>
 
+<button
+  type="button"
+  onClick={() =>
+    setIsAccountSecurityOpen(true)
+  }
+  disabled={
+    isWorking ||
+    isLoading
+  }
+  className="rounded-xl border border-blue-400/30 bg-blue-400/10 px-4 py-4 font-black text-blue-200 transition hover:border-blue-400 hover:bg-blue-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  🔐 Account
+</button>
+
   <button
     type="button"
     onClick={() =>
@@ -2257,6 +2277,16 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     setGraphRevision((currentRevision) => currentRevision + 1);
   }}
 />
+
+{isAccountSecurityOpen && (
+  <AccountSecurityPanel
+    isOpen={isAccountSecurityOpen}
+    onClose={() =>
+      setIsAccountSecurityOpen(false)
+    }
+    userEmail={userEmail}
+  />
+)}
 
 {isAIWorkflowCenterOpen && (
   <AIWorkflowCenterPanel
