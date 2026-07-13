@@ -33,6 +33,7 @@ import { AISemanticDuplicatePanel } from "@/components/ai/AISemanticDuplicatePan
 import { AIBatchTriagePanel } from "@/components/ai/AIBatchTriagePanel";
 import { AIRelationshipSuggestionsPanel } from "@/components/ai/AIRelationshipSuggestionsPanel";
 import { AIRelationshipHandoffPanel } from "@/components/ai/AIRelationshipHandoffPanel";
+import { AIWorkflowCenterPanel } from "@/components/ai/AIWorkflowCenterPanel";
 
 import type {
   AIRelationshipHandoff,
@@ -92,7 +93,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.10";
+const APP_VERSION = "Alpha 5.11";
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -386,6 +387,11 @@ const [
 ] = useState<AIRelationshipHandoff | null>(
   null,
 );
+
+const [
+  isAIWorkflowCenterOpen,
+  setIsAIWorkflowCenterOpen,
+] = useState(false);
 
 useEffect(() => {
   setIsAIMissingFieldsOpen(false);
@@ -1356,30 +1362,49 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:flex sm:items-center">
-              <button
-                onClick={() => setIsActivityOpen(true)}
-                className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-yellow-400 hover:text-yellow-300"
-              >
-                🧾 Activity
-              </button>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+  <button
+    type="button"
+    onClick={() =>
+      setIsAIWorkflowCenterOpen(true)
+    }
+    className="rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-4 font-black text-yellow-200 transition hover:border-yellow-300 hover:bg-yellow-400/20"
+  >
+    🧠 AI Center
+  </button>
 
-              <button
-                onClick={() => setIsBackupToolsOpen(true)}
-                disabled={isWorking || isLoading}
-                className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-yellow-400 hover:text-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                💾 Backup
-              </button>
+  <button
+    type="button"
+    onClick={() =>
+      setIsActivityOpen(true)
+    }
+    className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-yellow-400 hover:text-yellow-300"
+  >
+    🧾 Activity
+  </button>
 
-              <button
-                onClick={() => setIsCaptureOpen(true)}
-                disabled={isWorking}
-                className="rounded-xl bg-yellow-400 px-4 py-4 font-black text-black transition hover:scale-[1.01] hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                ➕ Capture
-              </button>
-            </div>
+  <button
+    type="button"
+    onClick={() =>
+      setIsBackupToolsOpen(true)
+    }
+    disabled={isWorking || isLoading}
+    className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-yellow-400 hover:text-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
+  >
+    💾 Backup
+  </button>
+
+  <button
+    type="button"
+    onClick={() =>
+      setIsCaptureOpen(true)
+    }
+    disabled={isWorking}
+    className="rounded-xl bg-yellow-400 px-4 py-4 font-black text-black transition hover:scale-[1.01] hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
+  >
+    ➕ Capture
+  </button>
+</div>
           </header>
 
           {(isLoading || isWorking) && (
@@ -1683,7 +1708,16 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       </section>
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-800 bg-neutral-950/95 p-3 backdrop-blur md:hidden">
-        <div className="mx-auto grid max-w-6xl grid-cols-4 gap-2">
+        <div className="mx-auto grid max-w-6xl grid-cols-5 gap-2">
+          <button
+  type="button"
+  onClick={() =>
+    setIsAIWorkflowCenterOpen(true)
+  }
+  className="rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-3 text-xs font-black text-yellow-200"
+>
+  🧠 AI
+</button>
           <button
             onClick={() => setIsCaptureOpen(true)}
             disabled={isWorking}
@@ -2069,6 +2103,82 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     setGraphRevision((currentRevision) => currentRevision + 1);
   }}
 />
+
+{isAIWorkflowCenterOpen && (
+  <AIWorkflowCenterPanel
+    entries={entries}
+    reviewQueueCount={
+      reviewQueueCount
+    }
+    draftCount={draftCount}
+    verifiedCount={verifiedCount}
+    publishedCount={publishedCount}
+    duplicateCount={
+      duplicateMatchesByEntryId.size
+    }
+    onClose={() =>
+      setIsAIWorkflowCenterOpen(
+        false,
+      )
+    }
+    onOpenAssistant={() => {
+      setIsAIWorkflowCenterOpen(
+        false,
+      );
+
+      setIsAIAssistantOpen(true);
+    }}
+    onOpenBatchTriage={() => {
+      setIsAIWorkflowCenterOpen(
+        false,
+      );
+
+      setWorkspaceMode("review");
+
+      setIsAIBatchTriageOpen(true);
+    }}
+    onOpenDuplicateReview={() => {
+      setIsAIWorkflowCenterOpen(
+        false,
+      );
+
+      setWorkspaceMode(
+        "duplicates",
+      );
+
+      setIsAISemanticDuplicatesOpen(
+        true,
+      );
+    }}
+    onOpenRelationshipSuggestions={() => {
+      setIsAIWorkflowCenterOpen(
+        false,
+      );
+
+      setWorkspaceMode("all");
+
+      setIsAIRelationshipSuggestionsOpen(
+        true,
+      );
+    }}
+    onOpenEntryForMissingFields={(
+      entry,
+    ) => {
+      setIsAIWorkflowCenterOpen(
+        false,
+      );
+
+      setAIEditorialHandoff(null);
+      setSelectedEntry(entry);
+
+      showToast(
+        "info",
+        "Entry opened",
+        `Click Fill missing fields to analyze ${entry.word}.`,
+      );
+    }}
+  />
+)}
 
 <AIAssistantDrawer
   isOpen={isAIAssistantOpen}
