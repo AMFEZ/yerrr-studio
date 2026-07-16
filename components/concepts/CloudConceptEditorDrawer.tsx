@@ -1,19 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Entry } from "@/types/entry";
 
-import type {
-  Concept,
-  ConceptCategory,
-  ConceptColor,
-} from "@/types/concept";
+import type { Concept, ConceptCategory, ConceptColor } from "@/types/concept";
 
-import {
-  conceptCategoryOptions,
-  conceptColorOptions,
-} from "@/types/concept";
+import { conceptCategoryOptions, conceptColorOptions } from "@/types/concept";
 
 import { useCloudKnowledgeGraph } from "@/hooks/useCloudKnowledgeGraph";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
@@ -116,24 +109,17 @@ export function CloudConceptEditorDrawer({
     refresh,
   } = useCloudKnowledgeGraph(isOpen);
 
-  const [activeTab, setActiveTab] =
-    useState<DrawerTab>("library");
+  const [activeTab, setActiveTab] = useState<DrawerTab>("library");
 
-  const [selectedConceptId, setSelectedConceptId] =
-    useState("");
+  const [selectedConceptId, setSelectedConceptId] = useState("");
 
-  const [selectedEntryId, setSelectedEntryId] =
-    useState("");
+  const [selectedEntryId, setSelectedEntryId] = useState("");
 
-  const [browseConceptId, setBrowseConceptId] =
-    useState("");
+  const [browseConceptId, setBrowseConceptId] = useState("");
 
-  const [draftConceptIds, setDraftConceptIds] = useState<
-    string[]
-  >([]);
+  const [draftConceptIds, setDraftConceptIds] = useState<string[]>([]);
 
-  const [form, setForm] =
-    useState<ConceptFormState>(EMPTY_FORM);
+  const [form, setForm] = useState<ConceptFormState>(EMPTY_FORM);
 
   const [conceptSearch, setConceptSearch] = useState("");
   const [entrySearch, setEntrySearch] = useState("");
@@ -143,36 +129,48 @@ export function CloudConceptEditorDrawer({
   const [message, setMessage] = useState("");
   const [localError, setLocalError] = useState("");
 
-  const sortedEntries = useMemo(() => {
-    return [...entries].sort((a, b) =>
-      a.word.localeCompare(b.word)
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    function handleCloudGraphChanged() {
+      void refresh();
+    }
+
+    window.addEventListener(
+      "yerrr:cloud-graph-changed",
+      handleCloudGraphChanged,
     );
+
+    return () => {
+      window.removeEventListener(
+        "yerrr:cloud-graph-changed",
+        handleCloudGraphChanged,
+      );
+    };
+  }, [isOpen, refresh]);
+
+  const sortedEntries = useMemo(() => {
+    return [...entries].sort((a, b) => a.word.localeCompare(b.word));
   }, [entries]);
 
   const selectedConcept = useMemo(() => {
     return (
-      concepts.find(
-        (concept) =>
-          String(concept.id) === selectedConceptId
-      ) ?? null
+      concepts.find((concept) => String(concept.id) === selectedConceptId) ??
+      null
     );
   }, [concepts, selectedConceptId]);
 
   const selectedEntry = useMemo(() => {
     return (
-      entries.find(
-        (entry) =>
-          String(entry.id) === selectedEntryId
-      ) ?? null
+      entries.find((entry) => String(entry.id) === selectedEntryId) ?? null
     );
   }, [entries, selectedEntryId]);
 
   const browseConcept = useMemo(() => {
     return (
-      concepts.find(
-        (concept) =>
-          String(concept.id) === browseConceptId
-      ) ?? null
+      concepts.find((concept) => String(concept.id) === browseConceptId) ?? null
     );
   }, [concepts, browseConceptId]);
 
@@ -183,10 +181,7 @@ export function CloudConceptEditorDrawer({
       assignment.conceptIds.forEach((conceptId) => {
         const normalizedId = String(conceptId);
 
-        usageMap.set(
-          normalizedId,
-          (usageMap.get(normalizedId) ?? 0) + 1
-        );
+        usageMap.set(normalizedId, (usageMap.get(normalizedId) ?? 0) + 1);
       });
     });
 
@@ -198,15 +193,14 @@ export function CloudConceptEditorDrawer({
 
     return (
       assignments.find(
-        (assignment) =>
-          String(assignment.entryId) === selectedEntryId
+        (assignment) => String(assignment.entryId) === selectedEntryId,
       ) ?? null
     );
   }, [assignments, selectedEntryId]);
 
   const selectedEntryConcepts = useMemo(() => {
     return concepts.filter((concept) =>
-      draftConceptIds.includes(String(concept.id))
+      draftConceptIds.includes(String(concept.id)),
     );
   }, [concepts, draftConceptIds]);
 
@@ -214,11 +208,9 @@ export function CloudConceptEditorDrawer({
     const query = conceptSearch.trim().toLowerCase();
 
     const sortedConcepts = [...concepts].sort((a, b) => {
-      const bUsage =
-        conceptUsageCounts.get(String(b.id)) ?? 0;
+      const bUsage = conceptUsageCounts.get(String(b.id)) ?? 0;
 
-      const aUsage =
-        conceptUsageCounts.get(String(a.id)) ?? 0;
+      const aUsage = conceptUsageCounts.get(String(a.id)) ?? 0;
 
       if (aUsage !== bUsage) {
         return bUsage - aUsage;
@@ -237,11 +229,7 @@ export function CloudConceptEditorDrawer({
         concept.description.toLowerCase().includes(query)
       );
     });
-  }, [
-    concepts,
-    conceptSearch,
-    conceptUsageCounts,
-  ]);
+  }, [concepts, conceptSearch, conceptUsageCounts]);
 
   const filteredEntries = useMemo(() => {
     const query = entrySearch.trim().toLowerCase();
@@ -263,21 +251,15 @@ export function CloudConceptEditorDrawer({
     const linkedEntryIds = new Set(
       assignments
         .filter((assignment) =>
-          assignment.conceptIds
-            .map(String)
-            .includes(browseConceptId)
+          assignment.conceptIds.map(String).includes(browseConceptId),
         )
-        .map((assignment) =>
-          String(assignment.entryId)
-        )
+        .map((assignment) => String(assignment.entryId)),
     );
 
     const query = browseSearch.trim().toLowerCase();
 
     return entries
-      .filter((entry) =>
-        linkedEntryIds.has(String(entry.id))
-      )
+      .filter((entry) => linkedEntryIds.has(String(entry.id)))
       .filter((entry) => {
         if (!query) return true;
 
@@ -287,15 +269,8 @@ export function CloudConceptEditorDrawer({
           entry.status.toLowerCase().includes(query)
         );
       })
-      .sort((a, b) =>
-        a.word.localeCompare(b.word)
-      );
-  }, [
-    assignments,
-    entries,
-    browseConceptId,
-    browseSearch,
-  ]);
+      .sort((a, b) => a.word.localeCompare(b.word));
+  }, [assignments, entries, browseConceptId, browseSearch]);
 
   async function getAuthenticatedClient() {
     const supabase = getSupabaseBrowserClient();
@@ -311,7 +286,7 @@ export function CloudConceptEditorDrawer({
 
     if (!user) {
       throw new Error(
-        "Auth session missing. Log out and log back into YERRR Studio."
+        "Auth session missing. Log out and log back into YERRR Studio.",
       );
     }
 
@@ -359,14 +334,13 @@ export function CloudConceptEditorDrawer({
 
     const duplicateConcept = concepts.find(
       (concept) =>
-        concept.slug.toLowerCase() ===
-          slug.toLowerCase() &&
-        String(concept.id) !== selectedConceptId
+        concept.slug.toLowerCase() === slug.toLowerCase() &&
+        String(concept.id) !== selectedConceptId,
     );
 
     if (duplicateConcept) {
       setLocalError(
-        `A cloud concept named "${duplicateConcept.name}" already uses this slug.`
+        `A cloud concept named "${duplicateConcept.name}" already uses this slug.`,
       );
 
       return;
@@ -398,10 +372,7 @@ export function CloudConceptEditorDrawer({
 
         setMessage(`"${name}" was updated in Supabase.`);
       } else {
-        const {
-          data: insertedConcept,
-          error,
-        } = await supabase
+        const { data: insertedConcept, error } = await supabase
           .from("concepts")
           .insert(payload)
           .select("id")
@@ -411,13 +382,9 @@ export function CloudConceptEditorDrawer({
           throw error;
         }
 
-        setSelectedConceptId(
-          String(insertedConcept.id)
-        );
+        setSelectedConceptId(String(insertedConcept.id));
 
-        setBrowseConceptId(
-          String(insertedConcept.id)
-        );
+        setBrowseConceptId(String(insertedConcept.id));
 
         setMessage(`"${name}" was created in Supabase.`);
       }
@@ -435,7 +402,7 @@ export function CloudConceptEditorDrawer({
     if (!selectedConcept) return;
 
     const confirmed = window.confirm(
-      `Delete "${selectedConcept.name}" from Supabase?\n\nAll entry assignments connected to this concept will also be removed.`
+      `Delete "${selectedConcept.name}" from Supabase?\n\nAll entry assignments connected to this concept will also be removed.`,
     );
 
     if (!confirmed) return;
@@ -463,17 +430,14 @@ export function CloudConceptEditorDrawer({
 
       setDraftConceptIds((currentIds) =>
         currentIds.filter(
-          (conceptId) =>
-            conceptId !== String(selectedConcept.id)
-        )
+          (conceptId) => conceptId !== String(selectedConcept.id),
+        ),
       );
 
       await refresh();
       onGraphChanged?.();
 
-      setMessage(
-        `"${deletedConceptName}" was deleted from Supabase.`
-      );
+      setMessage(`"${deletedConceptName}" was deleted from Supabase.`);
     } catch (deleteError) {
       setLocalError(getErrorMessage(deleteError));
     } finally {
@@ -485,15 +449,12 @@ export function CloudConceptEditorDrawer({
     const entryId = String(entry.id);
 
     const assignment = assignments.find(
-      (currentAssignment) =>
-        String(currentAssignment.entryId) === entryId
+      (currentAssignment) => String(currentAssignment.entryId) === entryId,
     );
 
     setSelectedEntryId(entryId);
 
-    setDraftConceptIds(
-      assignment?.conceptIds.map(String) ?? []
-    );
+    setDraftConceptIds(assignment?.conceptIds.map(String) ?? []);
 
     resetMessages();
   }
@@ -501,9 +462,7 @@ export function CloudConceptEditorDrawer({
   function toggleDraftConcept(conceptId: string) {
     setDraftConceptIds((currentIds) => {
       if (currentIds.includes(conceptId)) {
-        return currentIds.filter(
-          (currentId) => currentId !== conceptId
-        );
+        return currentIds.filter((currentId) => currentId !== conceptId);
       }
 
       return [...currentIds, conceptId];
@@ -523,39 +482,26 @@ export function CloudConceptEditorDrawer({
       const supabase = await getAuthenticatedClient();
 
       const currentConceptIds = new Set(
-        selectedEntryAssignment?.conceptIds.map(String) ??
-          []
+        selectedEntryAssignment?.conceptIds.map(String) ?? [],
       );
 
-      const nextConceptIds = new Set(
-        draftConceptIds.map(String)
+      const nextConceptIds = new Set(draftConceptIds.map(String));
+
+      const conceptIdsToAdd = Array.from(nextConceptIds).filter(
+        (conceptId) => !currentConceptIds.has(conceptId),
       );
 
-      const conceptIdsToAdd = Array.from(
-        nextConceptIds
-      ).filter(
-        (conceptId) =>
-          !currentConceptIds.has(conceptId)
-      );
-
-      const conceptIdsToRemove = Array.from(
-        currentConceptIds
-      ).filter(
-        (conceptId) =>
-          !nextConceptIds.has(conceptId)
+      const conceptIdsToRemove = Array.from(currentConceptIds).filter(
+        (conceptId) => !nextConceptIds.has(conceptId),
       );
 
       if (conceptIdsToAdd.length > 0) {
-        const rows = conceptIdsToAdd.map(
-          (conceptId) => ({
-            entry_id: selectedEntry.id,
-            concept_id: conceptId,
-          })
-        );
+        const rows = conceptIdsToAdd.map((conceptId) => ({
+          entry_id: selectedEntry.id,
+          concept_id: conceptId,
+        }));
 
-        const { error } = await supabase
-          .from("entry_concepts")
-          .insert(rows);
+        const { error } = await supabase.from("entry_concepts").insert(rows);
 
         if (error) {
           throw error;
@@ -577,9 +523,7 @@ export function CloudConceptEditorDrawer({
       await refresh();
       onGraphChanged?.();
 
-      setMessage(
-        `Cloud concepts were saved for "${selectedEntry.word}".`
-      );
+      setMessage(`Cloud concepts were saved for "${selectedEntry.word}".`);
     } catch (saveError) {
       setLocalError(getErrorMessage(saveError));
     } finally {
@@ -591,7 +535,7 @@ export function CloudConceptEditorDrawer({
     if (!selectedEntry) return;
 
     const confirmed = window.confirm(
-      `Remove all cloud concept assignments from "${selectedEntry.word}"?`
+      `Remove all cloud concept assignments from "${selectedEntry.word}"?`,
     );
 
     if (!confirmed) return;
@@ -617,7 +561,7 @@ export function CloudConceptEditorDrawer({
       onGraphChanged?.();
 
       setMessage(
-        `All cloud concepts were removed from "${selectedEntry.word}".`
+        `All cloud concepts were removed from "${selectedEntry.word}".`,
       );
     } catch (clearError) {
       setLocalError(getErrorMessage(clearError));
@@ -662,8 +606,8 @@ export function CloudConceptEditorDrawer({
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">
-              Create concepts, edit cloud records, assign concepts
-              to entries, and browse permanent Supabase links.
+              Create concepts, edit cloud records, assign concepts to entries,
+              and browse permanent Supabase links.
             </p>
           </div>
 
@@ -711,9 +655,7 @@ export function CloudConceptEditorDrawer({
               Storage
             </p>
 
-            <p className="mt-2 text-lg font-black text-sky-300">
-              Supabase
-            </p>
+            <p className="mt-2 text-lg font-black text-sky-300">Supabase</p>
           </div>
         </div>
 
@@ -766,9 +708,7 @@ export function CloudConceptEditorDrawer({
 
         {isLoading && concepts.length === 0 ? (
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-8 text-center">
-            <p className="font-black text-white">
-              Loading cloud concepts...
-            </p>
+            <p className="font-black text-white">Loading cloud concepts...</p>
           </div>
         ) : activeTab === "library" ? (
           <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
@@ -794,9 +734,7 @@ export function CloudConceptEditorDrawer({
 
               <input
                 value={conceptSearch}
-                onChange={(event) =>
-                  setConceptSearch(event.target.value)
-                }
+                onChange={(event) => setConceptSearch(event.target.value)}
                 placeholder="Search cloud concepts..."
                 className="mb-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-sky-400"
               />
@@ -809,13 +747,9 @@ export function CloudConceptEditorDrawer({
                 <div className="max-h-[62vh] space-y-2 overflow-y-auto pr-1">
                   {filteredConcepts.map((concept) => {
                     const usageCount =
-                      conceptUsageCounts.get(
-                        String(concept.id)
-                      ) ?? 0;
+                      conceptUsageCounts.get(String(concept.id)) ?? 0;
 
-                    const isSelected =
-                      selectedConceptId ===
-                      String(concept.id);
+                    const isSelected = selectedConceptId === String(concept.id);
 
                     return (
                       <div
@@ -844,7 +778,7 @@ export function CloudConceptEditorDrawer({
 
                             <span
                               className={`rounded-full border px-2 py-1 text-xs font-black ${getConceptColorClasses(
-                                concept.color
+                                concept.color,
                               )}`}
                             >
                               {concept.category}
@@ -853,9 +787,7 @@ export function CloudConceptEditorDrawer({
                         </button>
 
                         <button
-                          onClick={() =>
-                            browseConceptFromLibrary(concept)
-                          }
+                          onClick={() => browseConceptFromLibrary(concept)}
                           className="mt-3 rounded-xl border border-neutral-700 px-3 py-2 text-xs font-black text-neutral-300 hover:border-sky-400 hover:text-sky-300"
                         >
                           Browse Linked Entries
@@ -923,23 +855,16 @@ export function CloudConceptEditorDrawer({
                       onChange={(event) =>
                         setForm((currentForm) => ({
                           ...currentForm,
-                          category:
-                            event.target
-                              .value as ConceptCategory,
+                          category: event.target.value as ConceptCategory,
                         }))
                       }
                       className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none focus:border-sky-400"
                     >
-                      {conceptCategoryOptions.map(
-                        (category) => (
-                          <option
-                            key={category}
-                            value={category}
-                          >
-                            {category}
-                          </option>
-                        )
-                      )}
+                      {conceptCategoryOptions.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
                     </select>
                   </label>
 
@@ -953,9 +878,7 @@ export function CloudConceptEditorDrawer({
                       onChange={(event) =>
                         setForm((currentForm) => ({
                           ...currentForm,
-                          color:
-                            event.target
-                              .value as ConceptColor,
+                          color: event.target.value as ConceptColor,
                         }))
                       }
                       className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none focus:border-sky-400"
@@ -971,19 +894,15 @@ export function CloudConceptEditorDrawer({
 
                 <div
                   className={`rounded-2xl border p-4 ${getConceptColorClasses(
-                    form.color
+                    form.color,
                   )}`}
                 >
                   <p className="font-black">
-                    {form.name.trim() ||
-                      "Untitled Concept"}
+                    {form.name.trim() || "Untitled Concept"}
                   </p>
 
                   <p className="mt-1 text-xs opacity-70">
-                    /
-                    {slugify(form.name) ||
-                      "concept-slug"}{" "}
-                    · {form.category}
+                    /{slugify(form.name) || "concept-slug"} · {form.category}
                   </p>
                 </div>
 
@@ -996,8 +915,8 @@ export function CloudConceptEditorDrawer({
                     {isSaving
                       ? "Saving..."
                       : selectedConcept
-                      ? "Save Concept"
-                      : "Create Concept"}
+                        ? "Save Concept"
+                        : "Create Concept"}
                   </button>
 
                   <button
@@ -1009,9 +928,7 @@ export function CloudConceptEditorDrawer({
                   </button>
 
                   <button
-                    onClick={() =>
-                      void deleteSelectedConcept()
-                    }
+                    onClick={() => void deleteSelectedConcept()}
                     disabled={!selectedConcept || isSaving}
                     className="rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white hover:bg-red-500 disabled:opacity-40"
                   >
@@ -1024,15 +941,11 @@ export function CloudConceptEditorDrawer({
         ) : activeTab === "assign" ? (
           <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
             <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-              <h3 className="font-black text-white">
-                Entry Browser
-              </h3>
+              <h3 className="font-black text-white">Entry Browser</h3>
 
               <input
                 value={entrySearch}
-                onChange={(event) =>
-                  setEntrySearch(event.target.value)
-                }
+                onChange={(event) => setEntrySearch(event.target.value)}
                 placeholder="Search entries..."
                 className="my-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-sky-400"
               />
@@ -1041,9 +954,7 @@ export function CloudConceptEditorDrawer({
                 {filteredEntries.map((entry) => {
                   const assignment = assignments.find(
                     (currentAssignment) =>
-                      String(
-                        currentAssignment.entryId
-                      ) === String(entry.id)
+                      String(currentAssignment.entryId) === String(entry.id),
                   );
 
                   return (
@@ -1096,7 +1007,7 @@ export function CloudConceptEditorDrawer({
                         <span
                           key={concept.id}
                           className={`rounded-full border px-3 py-1 text-xs font-black ${getConceptColorClasses(
-                            concept.color
+                            concept.color,
                           )}`}
                         >
                           {concept.name}
@@ -1107,20 +1018,15 @@ export function CloudConceptEditorDrawer({
 
                   <div className="mt-5 space-y-2">
                     {concepts.map((concept) => {
-                      const checked =
-                        draftConceptIds.includes(
-                          String(concept.id)
-                        );
+                      const checked = draftConceptIds.includes(
+                        String(concept.id),
+                      );
 
                       return (
                         <button
                           key={concept.id}
                           type="button"
-                          onClick={() =>
-                            toggleDraftConcept(
-                              String(concept.id)
-                            )
-                          }
+                          onClick={() => toggleDraftConcept(String(concept.id))}
                           className={`w-full rounded-2xl border p-4 text-left ${
                             checked
                               ? "border-sky-400 bg-sky-400/10"
@@ -1149,9 +1055,7 @@ export function CloudConceptEditorDrawer({
 
                   <div className="mt-5 grid gap-2 sm:grid-cols-2">
                     <button
-                      onClick={() =>
-                        void saveEntryAssignments()
-                      }
+                      onClick={() => void saveEntryAssignments()}
                       disabled={isSaving}
                       className="rounded-xl bg-sky-400 px-4 py-3 text-sm font-black text-black hover:bg-sky-300 disabled:opacity-40"
                     >
@@ -1159,13 +1063,8 @@ export function CloudConceptEditorDrawer({
                     </button>
 
                     <button
-                      onClick={() =>
-                        void clearEntryAssignments()
-                      }
-                      disabled={
-                        isSaving ||
-                        draftConceptIds.length === 0
-                      }
+                      onClick={() => void clearEntryAssignments()}
+                      disabled={isSaving || draftConceptIds.length === 0}
                       className="rounded-xl bg-neutral-800 px-4 py-3 text-sm font-black text-white hover:bg-neutral-700 disabled:opacity-40"
                     >
                       Clear Concepts
@@ -1182,9 +1081,7 @@ export function CloudConceptEditorDrawer({
         ) : (
           <div className="grid gap-5 lg:grid-cols-[0.85fr_1.3fr]">
             <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-              <h3 className="font-black text-white">
-                Browse Cloud Concepts
-              </h3>
+              <h3 className="font-black text-white">Browse Cloud Concepts</h3>
 
               <div className="mt-4 space-y-2">
                 {filteredConcepts.map((concept) => (
@@ -1192,28 +1089,20 @@ export function CloudConceptEditorDrawer({
                     key={concept.id}
                     type="button"
                     onClick={() => {
-                      setBrowseConceptId(
-                        String(concept.id)
-                      );
+                      setBrowseConceptId(String(concept.id));
 
                       setBrowseSearch("");
                     }}
                     className={`w-full rounded-2xl border p-4 text-left ${
-                      browseConceptId ===
-                      String(concept.id)
+                      browseConceptId === String(concept.id)
                         ? "border-sky-400 bg-sky-400/10"
                         : "border-neutral-800 bg-neutral-950"
                     }`}
                   >
-                    <p className="font-black text-white">
-                      {concept.name}
-                    </p>
+                    <p className="font-black text-white">{concept.name}</p>
 
                     <p className="mt-1 text-xs text-neutral-500">
-                      {conceptUsageCounts.get(
-                        String(concept.id)
-                      ) ?? 0}{" "}
-                      linked
+                      {conceptUsageCounts.get(String(concept.id)) ?? 0} linked
                     </p>
                   </button>
                 ))}
@@ -1228,15 +1117,12 @@ export function CloudConceptEditorDrawer({
                   </h3>
 
                   <p className="mt-1 text-sm text-neutral-500">
-                    {linkedEntriesForBrowseConcept.length} linked
-                    entries
+                    {linkedEntriesForBrowseConcept.length} linked entries
                   </p>
 
                   <input
                     value={browseSearch}
-                    onChange={(event) =>
-                      setBrowseSearch(event.target.value)
-                    }
+                    onChange={(event) => setBrowseSearch(event.target.value)}
                     placeholder="Search linked entries..."
                     className="my-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-sky-400"
                   />
@@ -1247,37 +1133,33 @@ export function CloudConceptEditorDrawer({
                     </div>
                   ) : (
                     <div className="grid gap-3 md:grid-cols-2">
-                      {linkedEntriesForBrowseConcept.map(
-                        (entry) => (
-                          <div
-                            key={entry.id}
-                            className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
-                          >
-                            <div className="flex justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate font-black text-white">
-                                  {entry.word}
-                                </p>
+                      {linkedEntriesForBrowseConcept.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4"
+                        >
+                          <div className="flex justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-black text-white">
+                                {entry.word}
+                              </p>
 
-                                <p className="mt-1 text-xs text-neutral-500">
-                                  /{entry.slug}
-                                </p>
-                              </div>
-
-                              {onOpenEntry && (
-                                <button
-                                  onClick={() =>
-                                    openEntry(entry)
-                                  }
-                                  className="rounded-xl bg-sky-400 px-3 py-2 text-xs font-black text-black"
-                                >
-                                  Open
-                                </button>
-                              )}
+                              <p className="mt-1 text-xs text-neutral-500">
+                                /{entry.slug}
+                              </p>
                             </div>
+
+                            {onOpenEntry && (
+                              <button
+                                onClick={() => openEntry(entry)}
+                                className="rounded-xl bg-sky-400 px-3 py-2 text-xs font-black text-black"
+                              >
+                                Open
+                              </button>
+                            )}
                           </div>
-                        )
-                      )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </>
@@ -1291,14 +1173,11 @@ export function CloudConceptEditorDrawer({
         )}
 
         <div className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
-          <p className="font-black text-sky-100">
-            Alpha 3.7C2 note
-          </p>
+          <p className="font-black text-sky-100">Alpha 3.7C2 note</p>
 
           <p className="mt-2 text-sm leading-6 text-sky-100/70">
-            Changes made here write directly to Supabase and remain
-            available across devices. Local browser graph records are
-            not deleted.
+            Changes made here write directly to Supabase and remain available
+            across devices. Local browser graph records are not deleted.
           </p>
         </div>
       </aside>

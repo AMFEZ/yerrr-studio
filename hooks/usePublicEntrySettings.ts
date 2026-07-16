@@ -190,8 +190,8 @@ export function usePublicEntrySettings() {
               "public_entry_settings",
             )
             .upsert(payload, {
-              onConflict: "entry_id",
-            })
+  onConflict: "entry_id",
+})
             .select("*")
             .single();
 

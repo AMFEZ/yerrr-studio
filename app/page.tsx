@@ -1317,14 +1317,16 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       ? "Restore entries that were deleted by mistake."
       : "Search, open, edit, autosave, verify, publish, and delete captured slang.";
 
-  const workspaceTabs: Array<[WorkspaceMode, string]> = [
-    ["all", "All Entries"],
-    ["review", "Review Queue"],
-    ["draft", "Draft Queue"],
-    ["publish", "Publish Queue"],
-    ["duplicates", "Duplicates"],
-    ["trash", "Trash"],
-  ];
+  const workspaceTabs: Array<
+  [WorkspaceMode, string]
+> = [
+  ["all", "All Entries"],
+  ["draft", "Draft Queue"],
+  ["review", "Review Queue"],
+  ["publish", "Publish Queue"],
+  ["duplicates", "Duplicates"],
+  ["trash", "Trash"],
+];
 
   if (
     !isHydrated ||

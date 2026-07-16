@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { Concept } from "@/types/concept";
 import type { Entry, EntryStatus, Meaning } from "@/types/entry";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import {
+  formatConceptNames,
+  loadEntryCloudConceptState,
+  parseConceptNames,
+  syncEntryCloudConcepts,
+} from "@/lib/syncEntryCloudConcepts";
 import {
   aiAddedStatusOptions,
   categoryOptions,
@@ -26,6 +34,26 @@ const selectClass =
   "mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none focus:border-yellow-400";
 
 type AutosaveStatus = "saved" | "unsaved" | "saving" | "error";
+
+type CloudSyncStatus = "loading" | "idle" | "syncing" | "synced" | "error";
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    return String(
+      (
+        error as {
+          message?: unknown;
+        }
+      ).message ?? fallback,
+    );
+  }
+
+  return fallback;
+}
 
 function getMissingMeaningFields(meaning: Meaning) {
   const missingFields: string[] = [];
@@ -61,13 +89,132 @@ export function EntryEditorModal({
   onDelete: (id: string) => void;
 }) {
   const [draft, setDraft] = useState<Entry>(entry);
-  const [autosaveStatus, setAutosaveStatus] =
-    useState<AutosaveStatus>("saved");
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("saved");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+
+  const [cloudConcepts, setCloudConcepts] = useState<Concept[]>([]);
+  const [cloudAssignedConceptIds, setCloudAssignedConceptIds] = useState<
+    string[]
+  >([]);
+  const [cloudSyncStatus, setCloudSyncStatus] =
+    useState<CloudSyncStatus>("loading");
+  const [cloudSyncError, setCloudSyncError] = useState("");
+  const [cloudSyncedAt, setCloudSyncedAt] = useState<Date | null>(null);
 
   const firstRenderRef = useRef(true);
   const lastSavedSnapshotRef = useRef(JSON.stringify(entry));
   const saveVersionRef = useRef(0);
+  const cloudStateLoadedRef = useRef(false);
+  const conceptFieldsTouchedRef = useRef(false);
+  const assignedConceptNamesRef = useRef<string[]>([]);
+
+  const assignedCloudConcepts = useMemo(() => {
+    const assignedIdSet = new Set(cloudAssignedConceptIds.map(String));
+
+    return cloudConcepts.filter((concept) =>
+      assignedIdSet.has(String(concept.id)),
+    );
+  }, [cloudAssignedConceptIds, cloudConcepts]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    cloudStateLoadedRef.current = false;
+    conceptFieldsTouchedRef.current = false;
+    assignedConceptNamesRef.current = [];
+    setCloudSyncStatus("loading");
+    setCloudSyncError("");
+
+    async function loadCloudConcepts() {
+      try {
+        const supabase = getSupabaseBrowserClient();
+
+        const state = await loadEntryCloudConceptState(supabase, entry.id);
+
+        if (cancelled) {
+          return;
+        }
+
+        setCloudConcepts(state.concepts);
+        setCloudAssignedConceptIds(state.assignedConceptIds);
+        assignedConceptNamesRef.current = state.assignedConceptNames;
+        cloudStateLoadedRef.current = true;
+        setCloudSyncStatus("idle");
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        cloudStateLoadedRef.current = true;
+        setCloudSyncStatus("error");
+        setCloudSyncError(
+          getErrorMessage(error, "Unable to load the Concept Library."),
+        );
+      }
+    }
+
+    void loadCloudConcepts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.id]);
+
+  const syncCloudConcepts = useCallback(async (nextEntry: Entry) => {
+    const supabase = getSupabaseBrowserClient();
+
+    setCloudSyncStatus("syncing");
+    setCloudSyncError("");
+
+    try {
+      let preserveConceptNames = conceptFieldsTouchedRef.current
+        ? []
+        : assignedConceptNamesRef.current;
+
+      if (!cloudStateLoadedRef.current) {
+        const currentState = await loadEntryCloudConceptState(
+          supabase,
+          nextEntry.id,
+        );
+
+        setCloudConcepts(currentState.concepts);
+        setCloudAssignedConceptIds(currentState.assignedConceptIds);
+
+        assignedConceptNamesRef.current = currentState.assignedConceptNames;
+
+        preserveConceptNames = conceptFieldsTouchedRef.current
+          ? []
+          : currentState.assignedConceptNames;
+
+        cloudStateLoadedRef.current = true;
+      }
+
+      const state = await syncEntryCloudConcepts(supabase, nextEntry, {
+        preserveConceptNames,
+      });
+
+      setCloudConcepts(state.concepts);
+      setCloudAssignedConceptIds(state.assignedConceptIds);
+      assignedConceptNamesRef.current = state.assignedConceptNames;
+      conceptFieldsTouchedRef.current = false;
+      setCloudSyncedAt(new Date());
+      setCloudSyncStatus("synced");
+
+      window.dispatchEvent(new CustomEvent("yerrr:cloud-graph-changed"));
+
+      return state;
+    } catch (error) {
+      setCloudSyncStatus("error");
+      setCloudSyncError(
+        getErrorMessage(
+          error,
+          "Unable to sync concepts with the Concept Library.",
+        ),
+      );
+
+      throw error;
+    }
+  }, []);
 
   useEffect(() => {
     const currentSnapshot = JSON.stringify(draft);
@@ -90,6 +237,7 @@ export function EntryEditorModal({
       try {
         setAutosaveStatus("saving");
         await onAutoSave(draft);
+        await syncCloudConcepts(draft);
 
         if (saveVersion === saveVersionRef.current) {
           lastSavedSnapshotRef.current = currentSnapshot;
@@ -102,15 +250,74 @@ export function EntryEditorModal({
     }, 1500);
 
     return () => window.clearTimeout(timeout);
-  }, [draft, onAutoSave]);
+  }, [draft, onAutoSave, syncCloudConcepts]);
 
   function updateMeaning(meaningId: string, updates: Partial<Meaning>) {
+    if (Object.prototype.hasOwnProperty.call(updates, "conceptsText")) {
+      conceptFieldsTouchedRef.current = true;
+    }
+
     setDraft((currentDraft) => ({
       ...currentDraft,
       meanings: currentDraft.meanings.map((meaning) =>
-        meaning.id === meaningId ? { ...meaning, ...updates } : meaning
+        meaning.id === meaningId ? { ...meaning, ...updates } : meaning,
       ),
     }));
+  }
+
+  function addConceptToMeaning(meaningId: string, conceptName: string) {
+    const cleanName = conceptName.trim();
+
+    if (!cleanName) {
+      return;
+    }
+
+    const meaning = draft.meanings.find(
+      (currentMeaning) => currentMeaning.id === meaningId,
+    );
+
+    if (!meaning) {
+      return;
+    }
+
+    const nextNames = [...parseConceptNames(meaning.conceptsText), cleanName];
+
+    updateMeaning(meaningId, {
+      conceptsText: formatConceptNames(nextNames),
+    });
+  }
+
+  function removeConceptFromMeaning(meaningId: string, conceptName: string) {
+    const meaning = draft.meanings.find(
+      (currentMeaning) => currentMeaning.id === meaningId,
+    );
+
+    if (!meaning) {
+      return;
+    }
+
+    const normalizedName = conceptName.trim().toLowerCase();
+
+    updateMeaning(meaningId, {
+      conceptsText: formatConceptNames(
+        parseConceptNames(meaning.conceptsText).filter(
+          (currentName) => currentName.trim().toLowerCase() !== normalizedName,
+        ),
+      ),
+    });
+  }
+
+  async function handleManualSave() {
+    try {
+      setAutosaveStatus("saving");
+      await syncCloudConcepts(draft);
+      lastSavedSnapshotRef.current = JSON.stringify(draft);
+      setSavedAt(new Date());
+      setAutosaveStatus("saved");
+      onSave(draft);
+    } catch {
+      setAutosaveStatus("error");
+    }
   }
 
   function addMeaning() {
@@ -149,37 +356,78 @@ export function EntryEditorModal({
   }
 
   return (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-    <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
-      <div className="sticky top-0 z-10 -mx-6 -mt-6 mb-6 border-b border-neutral-800 bg-neutral-900/95 px-6 py-5 backdrop-blur">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.25em] text-yellow-400">
-              Full Lexicon V8 Editor
-            </p>
-            <h2 className="mt-2 text-3xl font-black">{draft.word}</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Autosave is active. Changes save after you stop typing.
-            </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
+        <div className="sticky top-0 z-10 -mx-6 -mt-6 mb-6 border-b border-neutral-800 bg-neutral-900/95 px-6 py-5 backdrop-blur">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.25em] text-yellow-400">
+                Full Lexicon V8 Editor
+              </p>
+              <h2 className="mt-2 text-3xl font-black">{draft.word}</h2>
+              <p className="mt-1 text-sm text-neutral-500">
+                Autosave is active. Changes save after you stop typing.
+              </p>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="w-fit rounded-lg bg-neutral-800 px-3 py-2 text-sm font-bold hover:bg-neutral-700"
+            >
+              Close
+            </button>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-fit rounded-lg bg-neutral-800 px-3 py-2 text-sm font-bold hover:bg-neutral-700"
-          >
-            Close
-          </button>
-        </div>
+          <div className="mt-4 grid gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 md:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-black text-neutral-300">
+                Entry Autosave
+              </p>
 
-        <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm font-black text-neutral-300">
-              Autosave Status
-            </p>
-            <AutosaveIndicator status={autosaveStatus} savedAt={savedAt} />
+              <AutosaveIndicator status={autosaveStatus} savedAt={savedAt} />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-neutral-300">
+                  Concept Library Sync
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => void syncCloudConcepts(draft)}
+                  disabled={
+                    cloudSyncStatus === "loading" ||
+                    cloudSyncStatus === "syncing"
+                  }
+                  className="rounded-lg border border-sky-400/30 px-2 py-1 text-[11px] font-black text-sky-300 hover:bg-sky-400/10 disabled:opacity-40"
+                >
+                  Sync now
+                </button>
+              </div>
+
+              <CloudConceptSyncIndicator
+                status={cloudSyncStatus}
+                error={cloudSyncError}
+                syncedAt={cloudSyncedAt}
+                assignedCount={cloudAssignedConceptIds.length}
+              />
+            </div>
           </div>
+
+          {assignedCloudConcepts.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {assignedCloudConcepts.map((concept) => (
+                <span
+                  key={concept.id}
+                  className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-black text-sky-200"
+                >
+                  {concept.name}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
         <Section title="Word Editor" subtitle="Core word or phrase metadata.">
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Word / Phrase">
@@ -320,8 +568,7 @@ export function EntryEditorModal({
                 onChange={(event) =>
                   setDraft({
                     ...draft,
-                    aiAddedStatus: event.target
-                      .value as Entry["aiAddedStatus"],
+                    aiAddedStatus: event.target.value as Entry["aiAddedStatus"],
                   })
                 }
                 className={selectClass}
@@ -561,7 +808,9 @@ export function EntryEditorModal({
                       />
                     </Field>
 
-                    <Field label="Concepts">
+                    <div className="block text-sm font-bold text-neutral-300">
+                      <p>Concepts</p>
+
                       <input
                         value={meaning.conceptsText}
                         onChange={(event) =>
@@ -572,7 +821,67 @@ export function EntryEditorModal({
                         placeholder="Money, Agreement, Conflict..."
                         className={inputClass}
                       />
-                    </Field>
+
+                      <div className="mt-3 rounded-xl border border-sky-400/20 bg-sky-400/5 p-4">
+                        <p className="text-xs leading-5 text-sky-100/70">
+                          Use commas between concepts. Existing names connect to
+                          the Concept Library; new names are created there
+                          automatically. Entry-level cloud assignments combine
+                          the concepts from every meaning.
+                        </p>
+
+                        {parseConceptNames(meaning.conceptsText).length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {parseConceptNames(meaning.conceptsText).map(
+                              (conceptName) => (
+                                <button
+                                  key={conceptName}
+                                  type="button"
+                                  onClick={() =>
+                                    removeConceptFromMeaning(
+                                      meaning.id,
+                                      conceptName,
+                                    )
+                                  }
+                                  className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-black text-sky-200 hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-200"
+                                  title="Remove concept"
+                                >
+                                  {conceptName} ×
+                                </button>
+                              ),
+                            )}
+                          </div>
+                        )}
+
+                        <select
+                          defaultValue=""
+                          onChange={(event) => {
+                            addConceptToMeaning(meaning.id, event.target.value);
+
+                            event.currentTarget.value = "";
+                          }}
+                          disabled={cloudSyncStatus === "loading"}
+                          className={`${selectClass} text-sm`}
+                        >
+                          <option value="">Add from Concept Library...</option>
+
+                          {cloudConcepts
+                            .filter(
+                              (concept) =>
+                                !parseConceptNames(meaning.conceptsText).some(
+                                  (selectedName) =>
+                                    selectedName.toLowerCase() ===
+                                    concept.name.toLowerCase(),
+                                ),
+                            )
+                            .map((concept) => (
+                              <option key={concept.id} value={concept.name}>
+                                {concept.name} · {concept.category}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
 
                     <Field label="Cultural Context">
                       <textarea
@@ -640,7 +949,7 @@ export function EntryEditorModal({
 
         <div className="mt-6 flex flex-col gap-3 md:flex-row">
           <button
-            onClick={() => onSave(draft)}
+            onClick={() => void handleManualSave()}
             className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-black hover:bg-yellow-300"
           >
             Save Changes Manually
@@ -661,6 +970,66 @@ export function EntryEditorModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CloudConceptSyncIndicator({
+  status,
+  error,
+  syncedAt,
+  assignedCount,
+}: {
+  status: CloudSyncStatus;
+  error: string;
+  syncedAt: Date | null;
+  assignedCount: number;
+}) {
+  if (status === "loading") {
+    return (
+      <div className="rounded-full bg-neutral-800 px-3 py-1 text-xs font-black uppercase tracking-wide text-neutral-300">
+        Loading library...
+      </div>
+    );
+  }
+
+  if (status === "syncing") {
+    return (
+      <div className="rounded-full bg-blue-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-300">
+        Syncing concepts...
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div
+        className="rounded-xl bg-red-500/20 px-3 py-2 text-xs font-bold text-red-300"
+        title={error}
+      >
+        Concept sync failed
+        {error ? `: ${error}` : ""}
+      </div>
+    );
+  }
+
+  if (status === "synced") {
+    return (
+      <div className="rounded-full bg-sky-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-sky-300">
+        {assignedCount} linked
+        {syncedAt
+          ? ` · ${syncedAt.toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })}`
+          : ""}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-full bg-sky-500/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-sky-300">
+      {assignedCount} linked · ready
     </div>
   );
 }
@@ -730,13 +1099,7 @@ function Section({
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block text-sm font-bold text-neutral-300">
       {label}

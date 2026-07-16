@@ -204,35 +204,39 @@ export function Sidebar(props: SidebarProps) {
   }, [entries]);
 
   const mainItems: NavItem[] = [
-    {
-      key: "all",
-      label: "All Entries",
-      description: "Browse the full slang lexicon.",
-      icon: "📚",
-      count: counts.total,
-    },
-    {
-      key: "review",
-      label: "Review Queue",
-      description: "Entries that still need approval.",
-      icon: "🟡",
-      count: counts.review,
-    },
-    {
-      key: "draft",
-      label: "Draft Queue",
-      description: "Unpublished or unfinished entries.",
-      icon: "📝",
-      count: counts.draft,
-    },
-    {
-      key: "published",
-      label: "Publish Queue",
-      description: "Verified entries ready to publish.",
-      icon: "🚀",
-      count: counts.published,
-    },
-  ];
+  {
+    key: "all",
+    label: "All Entries",
+    description:
+      "Browse the full slang lexicon.",
+    icon: "📚",
+    count: counts.total,
+  },
+  {
+    key: "draft",
+    label: "Draft Queue",
+    description:
+      "Unfinished entries at the beginning of the editorial workflow.",
+    icon: "📝",
+    count: counts.draft,
+  },
+  {
+    key: "review",
+    label: "Review Queue",
+    description:
+      "Completed drafts waiting for editorial review and approval.",
+    icon: "🟡",
+    count: counts.review,
+  },
+  {
+    key: "published",
+    label: "Publish Queue",
+    description:
+      "Verified entries ready for final publishing.",
+    icon: "🚀",
+    count: counts.published,
+  },
+];
 
   const toolItems: NavItem[] = [
 {
