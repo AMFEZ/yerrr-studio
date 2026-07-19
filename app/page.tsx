@@ -43,12 +43,14 @@ import { usePublicEntrySettings } from "@/hooks/usePublicEntrySettings";
 import { StudioReleaseReadinessPanel } from "@/components/release/StudioReleaseReadinessPanel";
 import { StudioContentReadyPanel } from "@/components/release/StudioContentReadyPanel";
 import { AccountSecurityPanel } from "@/components/account/AccountSecurityPanel";
+import { StudioSettingsPanel } from "@/components/settings/StudioSettingsPanel";
 
 import type {
   AIRelationshipHandoff,
 } from "@/types/aiRelationshipHandoff";
 import type { AIEditorialHandoff } from "@/types/aiEditorial";
 import { createClient } from "@/lib/supabase/client";
+import { STUDIO_VERSION } from "@/lib/studioVersion";
 
 type WorkspaceMode =
   | "all"
@@ -102,7 +104,7 @@ type BackupImportPreview = {
   warnings: string[];
 } | null;
 
-const APP_VERSION = "Alpha 5.16C";
+const APP_VERSION = STUDIO_VERSION;
 const ACTIVITY_STORAGE_KEY = "yerrr-studio-activity-log";
 const INITIAL_RENDER_LIMIT = 50;
 const RENDER_INCREMENT = 50;
@@ -326,6 +328,11 @@ export default function Home() {
     publishedCount,
     trashCount,
     isLoading,
+    isOnline,
+    pendingSyncCount,
+    isSyncingOffline,
+    offlineSyncError,
+    syncPendingChanges,
   } = useEntries();
 
 const {
@@ -355,6 +362,7 @@ const {
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("all");
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
+  const [isBulkActionsOpen, setIsBulkActionsOpen] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityItem[]>([]);
   const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_LIMIT);
   const [importPreview, setImportPreview] = useState<BackupImportPreview>(null);
@@ -444,6 +452,11 @@ const [
 useEffect(() => {
   setIsAIMissingFieldsOpen(false);
 }, [selectedEntry?.id]);
+
+const [
+  isSettingsOpen,
+  setIsSettingsOpen,
+] = useState(false);
 
 const [
   isAccountSecurityOpen,
@@ -739,6 +752,7 @@ const entriesWithPublicSettings = useMemo(
 
     setWorkspaceMode(nextMode);
     setSelectedEntryIds([]);
+    setIsBulkActionsOpen(false);
   }
 
   const filteredDraftQueueEntries = useMemo(() => {
@@ -859,10 +873,14 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   );
 
   const handleAutoSaveEntry = useCallback(
-    async function handleAutoSaveEntry(updatedEntry: Entry) {
-      await updateEntry(updatedEntry);
+    async function handleAutoSaveEntry(
+      updatedEntry: Entry,
+    ) {
+      return await updateEntry(
+        updatedEntry,
+      );
     },
-    [updateEntry]
+    [updateEntry],
   );
 
   const handleDeleteEntry = useCallback(
@@ -1393,12 +1411,12 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   entries={sidebarEntries}
   activeView={sidebarActiveView}
   setActiveView={handleWorkspaceModeChange}
-  onCreateEntry={() => setIsCaptureOpen(true)}
   onOpenAdvancedSearch={() =>
     setIsAdvancedSearchOpen(true)
   }
-  onOpenActivity={() => setIsActivityOpen(true)}
-  onOpenBackup={() => setIsBackupToolsOpen(true)}
+  onOpenSettings={() =>
+    setIsSettingsOpen(true)
+  }
   onOpenConcepts={() => setIsConceptsOpen(true)}
   onOpenGraphStats={() => setIsGraphStatsOpen(true)}
   onOpenMergeConcepts={() =>
@@ -1429,6 +1447,11 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   onOpenAIAssistant={() =>
     setIsAIAssistantOpen(true)
   }
+  reviewCount={reviewQueueCount}
+  draftCount={draftCount}
+  publishQueueCount={
+    entries.filter((entry) => entry.status === "Verified").length
+  }
   userEmail={userEmail}
   onLogout={() => {
     void handleLogout();
@@ -1457,7 +1480,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     onClick={() =>
       setIsAIWorkflowCenterOpen(true)
     }
-    className="rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-4 font-black text-yellow-200 transition hover:border-yellow-300 hover:bg-yellow-400/20"
+    className="hidden rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-4 font-black text-yellow-200 transition hover:border-yellow-300 hover:bg-yellow-400/20 lg:inline-flex"
   >
     🧠 AI Center
   </button>
@@ -1538,37 +1561,13 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
 <button
   type="button"
   onClick={() =>
-    setIsAccountSecurityOpen(true)
+    setIsSettingsOpen(true)
   }
-  disabled={
-    isWorking ||
-    isLoading
-  }
-  className="rounded-xl border border-blue-400/30 bg-blue-400/10 px-4 py-4 font-black text-blue-200 transition hover:border-blue-400 hover:bg-blue-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+  disabled={isWorking || isLoading}
+  className="hidden rounded-xl border border-blue-400/30 bg-blue-400/10 px-4 py-4 font-black text-blue-200 transition hover:border-blue-400 hover:bg-blue-400/20 disabled:cursor-not-allowed disabled:opacity-60 lg:inline-flex"
 >
-  🔐 Account
+  ⚙️ Settings
 </button>
-
-  <button
-    type="button"
-    onClick={() =>
-      setIsActivityOpen(true)
-    }
-    className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-yellow-400 hover:text-yellow-300"
-  >
-    🧾 Activity
-  </button>
-
-  <button
-    type="button"
-    onClick={() =>
-      setIsBackupToolsOpen(true)
-    }
-    disabled={isWorking || isLoading}
-    className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-4 font-black text-white transition hover:border-yellow-400 hover:text-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
-  >
-    💾 Backup
-  </button>
 
   <button
     type="button"
@@ -1576,7 +1575,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
       setIsCaptureOpen(true)
     }
     disabled={isWorking}
-    className="rounded-xl bg-yellow-400 px-4 py-4 font-black text-black transition hover:scale-[1.01] hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
+    className="hidden rounded-xl bg-yellow-400 px-4 py-4 font-black text-black transition hover:scale-[1.01] hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60 lg:inline-flex"
   >
     ➕ Capture
   </button>
@@ -1595,6 +1594,81 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
                     YERRR Studio is syncing with Supabase.
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {(
+            !isOnline ||
+            pendingSyncCount > 0 ||
+            isSyncingOffline ||
+            offlineSyncError
+          ) && (
+            <div
+              className={`mb-6 rounded-2xl border p-4 ${
+                !isOnline
+                  ? "border-yellow-400/25 bg-yellow-400/10"
+                  : offlineSyncError
+                  ? "border-red-400/25 bg-red-400/10"
+                  : "border-sky-400/25 bg-sky-400/10"
+              }`}
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p
+                    className={`font-black ${
+                      !isOnline
+                        ? "text-yellow-100"
+                        : offlineSyncError
+                        ? "text-red-100"
+                        : "text-sky-100"
+                    }`}
+                  >
+                    {!isOnline
+                      ? "Offline editing is active"
+                      : isSyncingOffline
+                      ? "Syncing saved offline edits..."
+                      : pendingSyncCount > 0
+                      ? `${pendingSyncCount} offline edit${
+                          pendingSyncCount === 1
+                            ? ""
+                            : "s"
+                        } waiting to sync`
+                      : "Offline sync notice"}
+                  </p>
+
+                  <p
+                    className={`mt-1 text-sm leading-6 ${
+                      !isOnline
+                        ? "text-yellow-100/70"
+                        : offlineSyncError
+                        ? "text-red-100/70"
+                        : "text-sky-100/70"
+                    }`}
+                  >
+                    {!isOnline
+                      ? "Keep editing normally. Changes are stored on this device and upload automatically when the connection returns."
+                      : offlineSyncError ||
+                        "Your locally saved changes are being uploaded to Supabase."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void syncPendingChanges();
+                  }}
+                  disabled={
+                    !isOnline ||
+                    pendingSyncCount === 0 ||
+                    isSyncingOffline
+                  }
+                  className="shrink-0 rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-sm font-black text-white transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isSyncingOffline
+                    ? "Syncing..."
+                    : "Sync Now"}
+                </button>
               </div>
             </div>
           )}
@@ -1687,7 +1761,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
 </div>
 
             <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="-mx-1 overflow-x-auto px-1 pb-1">
+              <div className="no-scrollbar -mx-1 overflow-x-auto px-1 pb-1">
                 <div className="flex min-w-max rounded-xl border border-neutral-800 bg-neutral-950 p-1">
                   {workspaceTabs.map(([mode, label]) => (
                     <button
@@ -1714,77 +1788,6 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
                 of{" "}
                 <span className="font-black text-white">{visibleTotal}</span>{" "}
                 entries
-              </div>
-            </div>
-
-            <div className="mb-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="font-black text-white">Bulk Actions</p>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    Selected in this view:{" "}
-                    <span className="font-black text-yellow-400">
-                      {selectedVisibleEntryIds.length}
-                    </span>
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                  <button
-                    onClick={
-                      allVisibleSelected
-                        ? deselectVisibleEntries
-                        : selectAllVisibleEntries
-                    }
-                    disabled={visibleEntries.length === 0 || isWorking}
-                    className="rounded-xl bg-neutral-800 px-4 py-3 text-sm font-black text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {allVisibleSelected ? "Deselect" : "Select Visible"}
-                  </button>
-
-                  <button
-                    onClick={clearSelectedEntries}
-                    disabled={selectedEntryIds.length === 0 || isWorking}
-                    className="rounded-xl bg-neutral-800 px-4 py-3 text-sm font-black text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Clear All
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                {workspaceMode === "trash" ? (
-                  <button
-                    onClick={handleBulkRestore}
-                    disabled={selectedVisibleEntryIds.length === 0 || isWorking}
-                    className="col-span-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40 sm:col-span-1"
-                  >
-                    Restore Selected
-                  </button>
-                ) : (
-                  <>
-                    {entryStatusOptions.map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => handleBulkStatusChange(status)}
-                        disabled={
-                          selectedVisibleEntryIds.length === 0 || isWorking
-                        }
-                        className="rounded-xl bg-yellow-400 px-3 py-3 text-xs font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:text-sm"
-                      >
-                        Move to {status}
-                      </button>
-                    ))}
-
-                    <button
-                      onClick={handleBulkDelete}
-                      disabled={selectedVisibleEntryIds.length === 0 || isWorking}
-                      className="rounded-xl bg-red-600 px-3 py-3 text-xs font-black text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:text-sm"
-                    >
-                      Move to Trash
-                    </button>
-                  </>
-                )}
               </div>
             </div>
 
@@ -1820,27 +1823,16 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
               </div>
             ) : (
               <>
-                <div className="mb-4 flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-400 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    Rendering{" "}
-                    <span className="font-black text-white">
-                      {renderedEntries.length}
-                    </span>{" "}
-                    of{" "}
-                    <span className="font-black text-white">
-                      {visibleEntries.length}
-                    </span>{" "}
-                    matching entries.
-                  </div>
-
-                  {hasMoreEntries && (
-                    <button
-                      onClick={loadMoreEntries}
-                      className="rounded-xl bg-neutral-800 px-4 py-2 text-sm font-black text-white hover:bg-neutral-700"
-                    >
-                      Load {Math.min(RENDER_INCREMENT, remainingEntriesCount)} More
-                    </button>
-                  )}
+                <div className="mb-4 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-400">
+                  Rendering{" "}
+                  <span className="font-black text-white">
+                    {renderedEntries.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-black text-white">
+                    {visibleEntries.length}
+                  </span>{" "}
+                  matching entries.
                 </div>
 
                 <div className="space-y-3">
@@ -1866,13 +1858,137 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
                 {hasMoreEntries && (
                   <div className="mt-5 flex justify-center">
                     <button
+                      type="button"
                       onClick={loadMoreEntries}
-                      className="rounded-xl border border-neutral-700 bg-neutral-900 px-5 py-3 text-sm font-black text-white hover:border-yellow-400 hover:text-yellow-300"
+                      className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-5 py-3 text-sm font-black text-white transition hover:border-yellow-400 hover:text-yellow-300 sm:w-auto"
                     >
-                      Load More Entries · {remainingEntriesCount} remaining
+                      Load {Math.min(RENDER_INCREMENT, remainingEntriesCount)} More
+                      <span className="ml-2 text-neutral-500">
+                        · {remainingEntriesCount} remaining
+                      </span>
                     </button>
                   </div>
                 )}
+
+                <section className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsBulkActionsOpen((currentValue) => !currentValue)
+                    }
+                    aria-expanded={isBulkActionsOpen}
+                    className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition hover:bg-neutral-900"
+                  >
+                    <div>
+                      <p className="font-black text-white">
+                        Bulk Actions
+                        <span className="ml-2 text-sm text-yellow-400">
+                          · {selectedVisibleEntryIds.length} selected
+                        </span>
+                      </p>
+                      <p className="mt-1 text-sm text-neutral-500">
+                        Expand only when you need to update multiple entries.
+                      </p>
+                    </div>
+
+                    <span
+                      aria-hidden="true"
+                      className={`shrink-0 text-lg font-black text-neutral-400 transition-transform ${
+                        isBulkActionsOpen ? "rotate-180" : ""
+                      }`}
+                    >
+                      ⌄
+                    </span>
+                  </button>
+
+                  {isBulkActionsOpen && (
+                    <div className="border-t border-neutral-800 p-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="text-sm font-black text-neutral-300">
+                            Selection controls
+                          </p>
+                          <p className="mt-1 text-sm text-neutral-500">
+                            Selected in this view:{" "}
+                            <span className="font-black text-yellow-400">
+                              {selectedVisibleEntryIds.length}
+                            </span>
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                          <button
+                            type="button"
+                            onClick={
+                              allVisibleSelected
+                                ? deselectVisibleEntries
+                                : selectAllVisibleEntries
+                            }
+                            disabled={visibleEntries.length === 0 || isWorking}
+                            className="rounded-xl bg-neutral-800 px-4 py-3 text-sm font-black text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {allVisibleSelected
+                              ? "Deselect Visible"
+                              : "Select Visible"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={clearSelectedEntries}
+                            disabled={selectedEntryIds.length === 0 || isWorking}
+                            className="rounded-xl bg-neutral-800 px-4 py-3 text-sm font-black text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                        {workspaceMode === "trash" ? (
+                          <button
+                            type="button"
+                            onClick={handleBulkRestore}
+                            disabled={
+                              selectedVisibleEntryIds.length === 0 || isWorking
+                            }
+                            className="col-span-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40 sm:col-span-1"
+                          >
+                            Restore Selected
+                          </button>
+                        ) : (
+                          <>
+                            {entryStatusOptions.map((status) => (
+                              <button
+                                key={status}
+                                type="button"
+                                onClick={() => handleBulkStatusChange(status)}
+                                disabled={
+                                  selectedVisibleEntryIds.length === 0 ||
+                                  isWorking
+                                }
+                                className="rounded-xl bg-yellow-400 px-3 py-3 text-xs font-black text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:text-sm"
+                              >
+                                Move to {status}
+                              </button>
+                            ))}
+
+                            <button
+                              type="button"
+                              onClick={handleBulkDelete}
+                              disabled={
+                                selectedVisibleEntryIds.length === 0 ||
+                                isWorking
+                              }
+                              className="rounded-xl bg-red-600 px-3 py-3 text-xs font-black text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:text-sm"
+                            >
+                              Move to Trash
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </section>
               </>
             )}
           </section>
@@ -1883,46 +1999,24 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
         </div>
       </section>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-800 bg-neutral-950/95 p-3 backdrop-blur md:hidden">
-        <div className="mx-auto grid max-w-6xl grid-cols-5 gap-2">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-800 bg-neutral-950/95 p-3 backdrop-blur lg:hidden">
+        <div className="mx-auto grid max-w-xl grid-cols-2 gap-3">
           <button
-  type="button"
-  onClick={() =>
-    setIsAIWorkflowCenterOpen(true)
-  }
-  className="rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-3 text-xs font-black text-yellow-200"
->
-  🧠 AI
-</button>
-          <button
+            type="button"
             onClick={() => setIsCaptureOpen(true)}
             disabled={isWorking}
-            className="rounded-xl bg-yellow-400 px-3 py-3 text-xs font-black text-black disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-2xl bg-yellow-400 px-4 py-4 text-sm font-black text-black shadow-lg transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             ➕ Capture
           </button>
 
           <button
-            onClick={() => setIsActivityOpen(true)}
-            className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-xs font-black text-white"
+            type="button"
+            onClick={() => setIsAIWorkflowCenterOpen(true)}
+            className="rounded-2xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-4 text-sm font-black text-yellow-200 shadow-lg transition hover:border-yellow-300 hover:bg-yellow-400/20"
           >
-            🧾 Log
+            🧠 AI
           </button>
-
-          <button
-            onClick={() => setIsBackupToolsOpen(true)}
-            disabled={isWorking || isLoading}
-            className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            💾 Backup
-          </button>
-
-          <a
-            href="#entry-workspace"
-            className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-center text-xs font-black text-white"
-          >
-            Work
-          </a>
         </div>
       </div>
 
@@ -2277,6 +2371,25 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
   entries={entries}
   onMerged={() => {
     setGraphRevision((currentRevision) => currentRevision + 1);
+  }}
+/>
+
+<StudioSettingsPanel
+  isOpen={isSettingsOpen}
+  onClose={() => setIsSettingsOpen(false)}
+  userEmail={userEmail}
+  activityCount={activityLog.length}
+  activeEntryCount={entries.length}
+  trashEntryCount={trashEntries.length}
+  isOnline={isOnline}
+  pendingSyncCount={pendingSyncCount}
+  isSyncingOffline={isSyncingOffline}
+  offlineSyncError={offlineSyncError}
+  onOpenAccount={() => setIsAccountSecurityOpen(true)}
+  onOpenActivity={() => setIsActivityOpen(true)}
+  onOpenBackup={() => setIsBackupToolsOpen(true)}
+  onSyncPendingChanges={() => {
+    void syncPendingChanges();
   }}
 />
 

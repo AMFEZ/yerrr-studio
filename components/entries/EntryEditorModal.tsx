@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Concept } from "@/types/concept";
 import type { Entry, EntryStatus, Meaning } from "@/types/entry";
+import { EditorialTaxonomyManager } from "@/components/settings/EditorialTaxonomyManager";
+import { useEditorialTaxonomy } from "@/hooks/useEditorialTaxonomy";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import {
   formatConceptNames,
@@ -13,13 +15,11 @@ import {
 } from "@/lib/syncEntryCloudConcepts";
 import {
   aiAddedStatusOptions,
-  categoryOptions,
   editorialStatusOptions,
   entryStatusOptions,
   entryTypes,
   lifecycleOptions,
   partOfSpeechOptions,
-  toneOptions,
   usageFrequencyOptions,
   visibilityOptions,
 } from "@/types/entry";
@@ -33,9 +33,20 @@ const textareaClass =
 const selectClass =
   "mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none focus:border-yellow-400";
 
-type AutosaveStatus = "saved" | "unsaved" | "saving" | "error";
+type AutosaveStatus =
+  | "saved"
+  | "unsaved"
+  | "saving"
+  | "offline"
+  | "error";
 
-type CloudSyncStatus = "loading" | "idle" | "syncing" | "synced" | "error";
+type CloudSyncStatus =
+  | "loading"
+  | "idle"
+  | "syncing"
+  | "pending"
+  | "synced"
+  | "error";
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) {
@@ -61,7 +72,6 @@ function getMissingMeaningFields(meaning: Meaning) {
   if (!meaning.title.trim()) missingFields.push("Meaning Title");
   if (!meaning.definition.trim()) missingFields.push("Definition");
   if (!meaning.example.trim()) missingFields.push("Example Sentence");
-  if (!meaning.plainEnglish.trim()) missingFields.push("Plain English");
   if (!meaning.category.trim()) missingFields.push("Category");
   if (!meaning.tone.trim()) missingFields.push("Tone");
   if (!meaning.usageFrequency.trim()) missingFields.push("Usage Frequency");
@@ -70,7 +80,7 @@ function getMissingMeaningFields(meaning: Meaning) {
 }
 
 function getMeaningCompleteness(meaning: Meaning) {
-  const totalFields = 7;
+  const totalFields = 6;
   const missingCount = getMissingMeaningFields(meaning).length;
   return Math.round(((totalFields - missingCount) / totalFields) * 100);
 }
@@ -84,13 +94,31 @@ export function EntryEditorModal({
 }: {
   entry: Entry;
   onClose: () => void;
-  onSave: (entry: Entry) => void;
-  onAutoSave: (entry: Entry) => Promise<void>;
+  onSave: (
+    entry: Entry,
+  ) => void | Promise<void>;
+  onAutoSave: (
+    entry: Entry,
+  ) => Promise<
+    "synced" | "queued" | void
+  >;
   onDelete: (id: string) => void;
 }) {
   const [draft, setDraft] = useState<Entry>(entry);
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("saved");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [isTaxonomyManagerOpen, setIsTaxonomyManagerOpen] = useState(false);
+
+  const {
+    categories,
+    tones,
+    customOptions: customTaxonomyOptions,
+    isLoading: isTaxonomyLoading,
+    isSaving: isTaxonomySaving,
+    error: taxonomyError,
+    addOption: addTaxonomyOption,
+    removeOption: removeTaxonomyOption,
+  } = useEditorialTaxonomy();
 
   const [cloudConcepts, setCloudConcepts] = useState<Concept[]>([]);
   const [cloudAssignedConceptIds, setCloudAssignedConceptIds] = useState<
@@ -115,6 +143,37 @@ export function EntryEditorModal({
       assignedIdSet.has(String(concept.id)),
     );
   }, [cloudAssignedConceptIds, cloudConcepts]);
+
+  const refreshCloudConceptState =
+    useCallback(async () => {
+      const supabase =
+        getSupabaseBrowserClient();
+
+      const state =
+        await loadEntryCloudConceptState(
+          supabase,
+          entry.id,
+        );
+
+      setCloudConcepts(
+        state.concepts,
+      );
+
+      setCloudAssignedConceptIds(
+        state.assignedConceptIds,
+      );
+
+      assignedConceptNamesRef.current =
+        state.assignedConceptNames;
+
+      cloudStateLoadedRef.current = true;
+      conceptFieldsTouchedRef.current = false;
+      setCloudSyncedAt(new Date());
+      setCloudSyncStatus("synced");
+      setCloudSyncError("");
+
+      return state;
+    }, [entry.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -236,11 +295,55 @@ export function EntryEditorModal({
 
       try {
         setAutosaveStatus("saving");
-        await onAutoSave(draft);
-        await syncCloudConcepts(draft);
 
-        if (saveVersion === saveVersionRef.current) {
-          lastSavedSnapshotRef.current = currentSnapshot;
+        const saveResult =
+          await onAutoSave(draft);
+
+        if (
+          saveResult === "queued"
+        ) {
+          if (
+            saveVersion ===
+            saveVersionRef.current
+          ) {
+            lastSavedSnapshotRef.current =
+              currentSnapshot;
+
+            setSavedAt(new Date());
+            setAutosaveStatus(
+              "offline",
+            );
+
+            setCloudSyncStatus(
+              "pending",
+            );
+
+            setCloudSyncError("");
+          }
+
+          return;
+        }
+
+        try {
+          await refreshCloudConceptState();
+        } catch (error) {
+          setCloudSyncStatus("error");
+
+          setCloudSyncError(
+            getErrorMessage(
+              error,
+              "The entry saved, but the Concept Library status could not be refreshed.",
+            ),
+          );
+        }
+
+        if (
+          saveVersion ===
+          saveVersionRef.current
+        ) {
+          lastSavedSnapshotRef.current =
+            currentSnapshot;
+
           setSavedAt(new Date());
           setAutosaveStatus("saved");
         }
@@ -249,8 +352,13 @@ export function EntryEditorModal({
       }
     }, 1500);
 
-    return () => window.clearTimeout(timeout);
-  }, [draft, onAutoSave, syncCloudConcepts]);
+    return () =>
+      window.clearTimeout(timeout);
+  }, [
+    draft,
+    onAutoSave,
+    refreshCloudConceptState,
+  ]);
 
   function updateMeaning(meaningId: string, updates: Partial<Meaning>) {
     if (Object.prototype.hasOwnProperty.call(updates, "conceptsText")) {
@@ -310,11 +418,33 @@ export function EntryEditorModal({
   async function handleManualSave() {
     try {
       setAutosaveStatus("saving");
-      await syncCloudConcepts(draft);
-      lastSavedSnapshotRef.current = JSON.stringify(draft);
+
+      await Promise.resolve(
+        onSave(draft),
+      );
+
+      lastSavedSnapshotRef.current =
+        JSON.stringify(draft);
+
       setSavedAt(new Date());
-      setAutosaveStatus("saved");
-      onSave(draft);
+
+      if (
+        typeof navigator !==
+          "undefined" &&
+        !navigator.onLine
+      ) {
+        setAutosaveStatus(
+          "offline",
+        );
+
+        setCloudSyncStatus(
+          "pending",
+        );
+      } else {
+        setAutosaveStatus(
+          "saved",
+        );
+      }
     } catch {
       setAutosaveStatus("error");
     }
@@ -356,7 +486,8 @@ export function EntryEditorModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
       <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
         <div className="sticky top-0 z-10 -mx-6 -mt-6 mb-6 border-b border-neutral-800 bg-neutral-900/95 px-6 py-5 backdrop-blur">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -395,7 +526,13 @@ export function EntryEditorModal({
 
                 <button
                   type="button"
-                  onClick={() => void syncCloudConcepts(draft)}
+                  onClick={() => {
+                    void syncCloudConcepts(
+                      draft,
+                    ).catch(
+                      () => undefined,
+                    );
+                  }}
                   disabled={
                     cloudSyncStatus === "loading" ||
                     cloudSyncStatus === "syncing"
@@ -630,8 +767,17 @@ export function EntryEditorModal({
         </Section>
 
         <Section title="Meaning Editor" subtitle="Edit each distinct meaning.">
-          <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
+              type="button"
+              onClick={() => setIsTaxonomyManagerOpen(true)}
+              className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-black text-neutral-300 hover:border-yellow-400 hover:text-yellow-200"
+            >
+              ⚙ Manage Categories & Tones
+            </button>
+
+            <button
+              type="button"
               onClick={addMeaning}
               className="rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300"
             >
@@ -643,6 +789,11 @@ export function EntryEditorModal({
             {draft.meanings.map((meaning, index) => {
               const missingFields = getMissingMeaningFields(meaning);
               const completeness = getMeaningCompleteness(meaning);
+              const categoryChoices = mergeCurrentOption(
+                categories,
+                meaning.category,
+              );
+              const toneChoices = mergeCurrentOption(tones, meaning.tone);
 
               return (
                 <div
@@ -692,7 +843,7 @@ export function EntryEditorModal({
                         }
                         className={selectClass}
                       >
-                        {categoryOptions.map((category) => (
+                        {categoryChoices.map((category) => (
                           <option key={category}>{category}</option>
                         ))}
                       </select>
@@ -708,7 +859,7 @@ export function EntryEditorModal({
                         }
                         className={selectClass}
                       >
-                        {toneOptions.map((tone) => (
+                        {toneChoices.map((tone) => (
                           <option key={tone}>{tone}</option>
                         ))}
                       </select>
@@ -789,20 +940,6 @@ export function EntryEditorModal({
                           })
                         }
                         placeholder="Use it in a real NYC-style sentence."
-                        rows={3}
-                        className={textareaClass}
-                      />
-                    </Field>
-
-                    <Field label="Plain English Translation">
-                      <textarea
-                        value={meaning.plainEnglish}
-                        onChange={(event) =>
-                          updateMeaning(meaning.id, {
-                            plainEnglish: event.target.value,
-                          })
-                        }
-                        placeholder="Translate the slang into plain English."
                         rows={3}
                         className={textareaClass}
                       />
@@ -969,9 +1106,53 @@ export function EntryEditorModal({
             Delete Entry
           </button>
         </div>
+        </div>
       </div>
-    </div>
+
+      <EditorialTaxonomyManager
+        isOpen={isTaxonomyManagerOpen}
+        onClose={() => setIsTaxonomyManagerOpen(false)}
+        categories={categories}
+        tones={tones}
+        customOptions={customTaxonomyOptions}
+        isLoading={isTaxonomyLoading}
+        isSaving={isTaxonomySaving}
+        error={taxonomyError}
+        onAddOption={addTaxonomyOption}
+        onRemoveOption={removeTaxonomyOption}
+      />
+    </>
   );
+}
+
+function mergeCurrentOption(options: string[], currentValue: string) {
+  const cleanCurrentValue = currentValue.trim();
+  const values = cleanCurrentValue
+    ? [...options, cleanCurrentValue]
+    : [...options];
+
+  const unique = new Map<string, string>();
+
+  values.forEach((value) => {
+    const cleanValue = value.trim();
+
+    if (!cleanValue) {
+      return;
+    }
+
+    const key = cleanValue.toLocaleLowerCase();
+
+    if (!unique.has(key)) {
+      unique.set(key, cleanValue);
+    }
+  });
+
+  return [
+    "",
+    ...Array.from(unique.values()).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    ),
+  ];
 }
 
 function CloudConceptSyncIndicator({
@@ -997,6 +1178,14 @@ function CloudConceptSyncIndicator({
     return (
       <div className="rounded-full bg-blue-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-300">
         Syncing concepts...
+      </div>
+    );
+  }
+
+  if (status === "pending") {
+    return (
+      <div className="rounded-xl bg-yellow-500/20 px-3 py-2 text-xs font-bold text-yellow-300">
+        Saved locally · concept sync pending
       </div>
     );
   }
@@ -1053,6 +1242,14 @@ function AutosaveIndicator({
     return (
       <div className="rounded-full bg-yellow-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-yellow-300">
         Unsaved changes...
+      </div>
+    );
+  }
+
+  if (status === "offline") {
+    return (
+      <div className="rounded-xl bg-yellow-500/20 px-3 py-2 text-xs font-black uppercase tracking-wide text-yellow-300">
+        Saved locally · syncs when online
       </div>
     );
   }

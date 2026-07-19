@@ -1,7 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { syncEntryCloudConcepts } from "@/lib/syncEntryCloudConcepts";
+import {
+  getPendingEntryUpdates,
+  loadEntrySnapshot,
+  mergePendingEntryUpdates,
+  OFFLINE_QUEUE_CHANGED_EVENT,
+  queueEntryUpdate,
+  recordEntrySyncFailure,
+  removePendingEntryUpdate,
+  saveEntrySnapshot,
+} from "@/lib/offlineEntryQueue";
 import type {
   AiAddedStatus,
   EditorialStatus,
@@ -139,7 +150,6 @@ function entryMatchesSearch(entry: Entry, search: string) {
         meaning.title.toLowerCase().includes(query) ||
         meaning.definition.toLowerCase().includes(query) ||
         meaning.example.toLowerCase().includes(query) ||
-        meaning.plainEnglish.toLowerCase().includes(query) ||
         meaning.category.toLowerCase().includes(query) ||
         meaning.tone.toLowerCase().includes(query) ||
         meaning.conceptsText.toLowerCase().includes(query) ||
@@ -161,7 +171,6 @@ function isEntryInReviewQueue(entry: Entry) {
       !meaning.title.trim() ||
       !meaning.definition.trim() ||
       !meaning.example.trim() ||
-      !meaning.plainEnglish.trim() ||
       !meaning.category.trim() ||
       !meaning.tone.trim() ||
       !meaning.usageFrequency.trim()
@@ -169,152 +178,793 @@ function isEntryInReviewQueue(entry: Entry) {
   });
 }
 
+function getErrorMessage(
+  error: unknown,
+  fallback = "Unable to save the entry.",
+) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error
+  ) {
+    return String(
+      (
+        error as {
+          message?: unknown;
+        }
+      ).message ?? fallback,
+    );
+  }
+
+  return fallback;
+}
+
+function toError(
+  error: unknown,
+  fallback: string,
+) {
+  return error instanceof Error
+    ? error
+    : new Error(
+        getErrorMessage(error, fallback),
+      );
+}
+
+function isNetworkError(error: unknown) {
+  if (
+    typeof navigator !== "undefined" &&
+    !navigator.onLine
+  ) {
+    return true;
+  }
+
+  const message = getErrorMessage(
+    error,
+    "",
+  ).toLowerCase();
+
+  return [
+    "failed to fetch",
+    "fetch failed",
+    "network",
+    "load failed",
+    "offline",
+    "connection",
+    "timeout",
+    "timed out",
+  ].some((term) =>
+    message.includes(term),
+  );
+}
+
 export function useEntries() {
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = useMemo(
+    () => createClient(),
+    [],
+  );
 
-  const [allEntries, setAllEntries] = useState<Entry[]>([]);
-  const [search, setSearch] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [allEntries, setAllEntries] =
+    useState<Entry[]>([]);
 
-  const loadEntries = useCallback(async () => {
-    setIsLoading(true);
+  const [search, setSearch] =
+    useState("");
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+  const [isLoading, setIsLoading] =
+    useState(true);
 
-    if (userError || !user) {
-      setAllEntries([]);
-      setIsLoading(false);
-      return;
-    }
+  const [isOnline, setIsOnline] =
+    useState(() => {
+      if (
+        typeof navigator === "undefined"
+      ) {
+        return true;
+      }
 
-    const { data: entryRows, error: entryError } = await supabase
-      .from("entries")
-      .select(
-        `
-        id,
-        word,
-        type,
-        slug,
-        pronunciation,
-        part_of_speech,
-        alternate_spellings,
-        status,
-        lifecycle,
-        visibility,
-        featured,
-        ai_added_status,
-        audio_filename,
-        illustration_filename,
-        illustration_notes,
-        notes,
-        updated_at,
-        deleted_at,
-        deleted_previous_status
-      `
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+      return navigator.onLine;
+    });
 
-    if (entryError) {
-      alert(entryError.message);
-      setIsLoading(false);
-      return;
-    }
+  const [
+    pendingSyncCount,
+    setPendingSyncCount,
+  ] = useState(0);
 
-    const entryList = (entryRows ?? []) as EntryRow[];
-    const entryIds = entryList.map((entry) => entry.id);
+  const [
+    isSyncingOffline,
+    setIsSyncingOffline,
+  ] = useState(false);
 
-    if (entryIds.length === 0) {
-      setAllEntries([]);
-      setIsLoading(false);
-      return;
-    }
+  const [
+    offlineSyncError,
+    setOfflineSyncError,
+  ] = useState("");
 
-    const { data: meaningRows, error: meaningError } = await supabase
-      .from("meanings")
-      .select(
-        `
-        id,
-        entry_id,
-        meaning_order,
-        title,
-        definition,
-        example,
-        plain_english,
-        category,
-        tone,
-        concepts_text,
-        usage_frequency,
-        cultural_context,
-        editorial_status,
-        ai_added_status,
-        verified,
-        source
-      `
-      )
-      .in("entry_id", entryIds)
-      .order("meaning_order", { ascending: true });
+  const syncInProgressRef =
+    useRef(false);
 
-    if (meaningError) {
-      alert(meaningError.message);
-      setIsLoading(false);
-      return;
-    }
+  const refreshOfflineQueueState =
+    useCallback(async () => {
+      const pending =
+        await getPendingEntryUpdates();
 
-    const meaningList = (meaningRows ?? []) as MeaningRow[];
+      setPendingSyncCount(
+        pending.length,
+      );
 
-    const mappedEntries: Entry[] = entryList.map((entry) => ({
-      id: entry.id,
-      word: entry.word,
-      type: entry.type ?? "Word",
-      slug: entry.slug ?? slugify(entry.word),
-      pronunciation: entry.pronunciation ?? "",
-      partOfSpeech: entry.part_of_speech ?? "",
-      alternateSpellings: entry.alternate_spellings ?? "",
-      status: normalizeEntryStatus(entry.status),
-      lifecycle: normalizeLifecycle(entry.lifecycle),
-      visibility: normalizeVisibility(entry.visibility),
-      featured: Boolean(entry.featured),
-      aiAddedStatus: normalizeAiAddedStatus(entry.ai_added_status),
-      audioFilename: entry.audio_filename ?? "",
-      illustrationFilename: entry.illustration_filename ?? "",
-      illustrationNotes: entry.illustration_notes ?? "",
-      notes: entry.notes ?? "",
-      updatedAt: entry.updated_at ?? "",
-      deletedAt: entry.deleted_at ?? "",
-      deletedPreviousStatus: normalizeDeletedPreviousStatus(
-        entry.deleted_previous_status
-      ),
-      meanings: meaningList
-        .filter((meaning) => meaning.entry_id === entry.id)
-        .map((meaning) => ({
-          id: meaning.id,
-          title: meaning.title ?? "",
-          definition: meaning.definition ?? "",
-          example: meaning.example ?? "",
-          plainEnglish: meaning.plain_english ?? "",
-          category: meaning.category ?? "",
-          tone: meaning.tone ?? "",
-          conceptsText: meaning.concepts_text ?? "",
-          usageFrequency: meaning.usage_frequency ?? "",
-          culturalContext: meaning.cultural_context ?? "",
-          editorialStatus: normalizeEditorialStatus(meaning.editorial_status),
-          aiAddedStatus: normalizeAiAddedStatus(meaning.ai_added_status),
-          verified: Boolean(meaning.verified),
-          source: meaning.source ?? "Original",
-        })),
-    }));
+      return pending;
+    }, []);
 
-    setAllEntries(mappedEntries);
-    setIsLoading(false);
-  }, [supabase]);
+  const saveEntryToSupabase =
+    useCallback(
+      async (
+        updatedEntry: Entry,
+      ) => {
+        const savedAt =
+          new Date().toISOString();
+
+        const {
+          error: entryError,
+        } = await supabase
+          .from("entries")
+          .update({
+            word: updatedEntry.word,
+            type: updatedEntry.type,
+            slug:
+              updatedEntry.slug.trim() ||
+              slugify(
+                updatedEntry.word,
+              ),
+            pronunciation:
+              updatedEntry.pronunciation,
+            part_of_speech:
+              updatedEntry.partOfSpeech,
+            alternate_spellings:
+              updatedEntry.alternateSpellings,
+            status: updatedEntry.status,
+            lifecycle:
+              updatedEntry.lifecycle,
+            visibility:
+              updatedEntry.visibility,
+            featured:
+              updatedEntry.featured,
+            ai_added_status:
+              updatedEntry.aiAddedStatus,
+            audio_filename:
+              updatedEntry.audioFilename,
+            illustration_filename:
+              updatedEntry.illustrationFilename,
+            illustration_notes:
+              updatedEntry.illustrationNotes,
+            notes: updatedEntry.notes,
+            updated_at: savedAt,
+          })
+          .eq(
+            "id",
+            updatedEntry.id,
+          );
+
+        if (entryError) {
+          throw toError(
+            entryError,
+            "Unable to save the entry.",
+          );
+        }
+
+        const {
+          data: existingMeanings,
+          error:
+            existingMeaningError,
+        } = await supabase
+          .from("meanings")
+          .select("id")
+          .eq(
+            "entry_id",
+            updatedEntry.id,
+          );
+
+        if (existingMeaningError) {
+          throw toError(
+            existingMeaningError,
+            "Unable to load the entry meanings.",
+          );
+        }
+
+        const keptMeaningIds =
+          updatedEntry.meanings
+            .filter(
+              (meaning) =>
+                !meaning.id.startsWith(
+                  "temp-",
+                ),
+            )
+            .map(
+              (meaning) =>
+                meaning.id,
+            );
+
+        const meaningIdsToDelete = (
+          existingMeanings ?? []
+        )
+          .map(
+            (meaning) =>
+              meaning.id,
+          )
+          .filter(
+            (id) =>
+              !keptMeaningIds.includes(
+                id,
+              ),
+          );
+
+        if (
+          meaningIdsToDelete.length > 0
+        ) {
+          const {
+            error:
+              deleteMeaningsError,
+          } = await supabase
+            .from("meanings")
+            .delete()
+            .in(
+              "id",
+              meaningIdsToDelete,
+            );
+
+          if (
+            deleteMeaningsError
+          ) {
+            throw toError(
+              deleteMeaningsError,
+              "Unable to remove an old meaning.",
+            );
+          }
+        }
+
+        for (
+          let index = 0;
+          index <
+          updatedEntry.meanings.length;
+          index += 1
+        ) {
+          const meaning =
+            updatedEntry.meanings[index];
+
+          const meaningPayload = {
+            meaning_order: index + 1,
+            title: meaning.title,
+            definition:
+              meaning.definition,
+            example: meaning.example,
+            plain_english:
+              meaning.plainEnglish,
+            category:
+              meaning.category,
+            tone: meaning.tone,
+            concepts_text:
+              meaning.conceptsText,
+            usage_frequency:
+              meaning.usageFrequency,
+            cultural_context:
+              meaning.culturalContext,
+            editorial_status:
+              meaning.editorialStatus,
+            ai_added_status:
+              meaning.aiAddedStatus,
+            verified:
+              meaning.verified,
+            source: meaning.source,
+            updated_at: savedAt,
+          };
+
+          if (
+            meaning.id.startsWith(
+              "temp-",
+            )
+          ) {
+            const { error } =
+              await supabase
+                .from("meanings")
+                .insert({
+                  entry_id:
+                    updatedEntry.id,
+                  ...meaningPayload,
+                });
+
+            if (error) {
+              throw toError(
+                error,
+                "Unable to create a new meaning.",
+              );
+            }
+          } else {
+            const { error } =
+              await supabase
+                .from("meanings")
+                .update(
+                  meaningPayload,
+                )
+                .eq(
+                  "id",
+                  meaning.id,
+                );
+
+            if (error) {
+              throw toError(
+                error,
+                "Unable to save a meaning.",
+              );
+            }
+          }
+        }
+
+        await syncEntryCloudConcepts(
+          supabase,
+          updatedEntry,
+        );
+      },
+      [supabase],
+    );
+
+  const loadEntries = useCallback(
+    async () => {
+      setIsLoading(true);
+
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session?.user
+        ) {
+          throw (
+            sessionError ??
+            new Error(
+              "No active Studio session was found.",
+            )
+          );
+        }
+
+        const {
+          data: entryRows,
+          error: entryError,
+        } = await supabase
+          .from("entries")
+          .select(
+            `
+            id,
+            word,
+            type,
+            slug,
+            pronunciation,
+            part_of_speech,
+            alternate_spellings,
+            status,
+            lifecycle,
+            visibility,
+            featured,
+            ai_added_status,
+            audio_filename,
+            illustration_filename,
+            illustration_notes,
+            notes,
+            updated_at,
+            deleted_at,
+            deleted_previous_status
+          `,
+          )
+          .eq(
+            "user_id",
+            session.user.id,
+          )
+          .order("created_at", {
+            ascending: false,
+          });
+
+        if (entryError) {
+          throw toError(
+            entryError,
+            "Unable to load entries.",
+          );
+        }
+
+        const entryList =
+          (entryRows ??
+            []) as EntryRow[];
+
+        const entryIds =
+          entryList.map(
+            (entry) =>
+              entry.id,
+          );
+
+        let meaningList:
+          MeaningRow[] = [];
+
+        if (
+          entryIds.length > 0
+        ) {
+          const {
+            data: meaningRows,
+            error: meaningError,
+          } = await supabase
+            .from("meanings")
+            .select(
+              `
+              id,
+              entry_id,
+              meaning_order,
+              title,
+              definition,
+              example,
+              plain_english,
+              category,
+              tone,
+              concepts_text,
+              usage_frequency,
+              cultural_context,
+              editorial_status,
+              ai_added_status,
+              verified,
+              source
+            `,
+            )
+            .in(
+              "entry_id",
+              entryIds,
+            )
+            .order(
+              "meaning_order",
+              {
+                ascending: true,
+              },
+            );
+
+          if (meaningError) {
+            throw toError(
+              meaningError,
+              "Unable to load entry meanings.",
+            );
+          }
+
+          meaningList =
+            (meaningRows ??
+              []) as MeaningRow[];
+        }
+
+        const mappedEntries:
+          Entry[] = entryList.map(
+          (entry) => ({
+            id: entry.id,
+            word: entry.word,
+            type:
+              entry.type ??
+              "Word",
+            slug:
+              entry.slug ??
+              slugify(
+                entry.word,
+              ),
+            pronunciation:
+              entry.pronunciation ??
+              "",
+            partOfSpeech:
+              entry.part_of_speech ??
+              "",
+            alternateSpellings:
+              entry.alternate_spellings ??
+              "",
+            status:
+              normalizeEntryStatus(
+                entry.status,
+              ),
+            lifecycle:
+              normalizeLifecycle(
+                entry.lifecycle,
+              ),
+            visibility:
+              normalizeVisibility(
+                entry.visibility,
+              ),
+            featured: Boolean(
+              entry.featured,
+            ),
+            aiAddedStatus:
+              normalizeAiAddedStatus(
+                entry.ai_added_status,
+              ),
+            audioFilename:
+              entry.audio_filename ??
+              "",
+            illustrationFilename:
+              entry.illustration_filename ??
+              "",
+            illustrationNotes:
+              entry.illustration_notes ??
+              "",
+            notes:
+              entry.notes ?? "",
+            updatedAt:
+              entry.updated_at ?? "",
+            deletedAt:
+              entry.deleted_at ?? "",
+            deletedPreviousStatus:
+              normalizeDeletedPreviousStatus(
+                entry.deleted_previous_status,
+              ),
+            meanings:
+              meaningList
+                .filter(
+                  (meaning) =>
+                    meaning.entry_id ===
+                    entry.id,
+                )
+                .map(
+                  (meaning) => ({
+                    id: meaning.id,
+                    title:
+                      meaning.title ??
+                      "",
+                    definition:
+                      meaning.definition ??
+                      "",
+                    example:
+                      meaning.example ??
+                      "",
+                    plainEnglish:
+                      meaning.plain_english ??
+                      "",
+                    category:
+                      meaning.category ??
+                      "",
+                    tone:
+                      meaning.tone ??
+                      "",
+                    conceptsText:
+                      meaning.concepts_text ??
+                      "",
+                    usageFrequency:
+                      meaning.usage_frequency ??
+                      "",
+                    culturalContext:
+                      meaning.cultural_context ??
+                      "",
+                    editorialStatus:
+                      normalizeEditorialStatus(
+                        meaning.editorial_status,
+                      ),
+                    aiAddedStatus:
+                      normalizeAiAddedStatus(
+                        meaning.ai_added_status,
+                      ),
+                    verified:
+                      Boolean(
+                        meaning.verified,
+                      ),
+                    source:
+                      meaning.source ??
+                      "Original",
+                  }),
+                ),
+          }),
+        );
+
+        const pending =
+          await getPendingEntryUpdates();
+
+        const mergedEntries =
+          mergePendingEntryUpdates(
+            mappedEntries,
+            pending,
+          );
+
+        setAllEntries(
+          mergedEntries,
+        );
+
+        await saveEntrySnapshot(
+          mergedEntries,
+        );
+
+        setOfflineSyncError("");
+      } catch (error) {
+        if (
+          isNetworkError(error)
+        ) {
+          const [
+            cachedEntries,
+            pending,
+          ] = await Promise.all([
+            loadEntrySnapshot(),
+            getPendingEntryUpdates(),
+          ]);
+
+          setAllEntries(
+            mergePendingEntryUpdates(
+              cachedEntries,
+              pending,
+            ),
+          );
+
+          setIsOnline(
+            typeof navigator ===
+              "undefined"
+              ? false
+              : navigator.onLine,
+          );
+
+          setOfflineSyncError(
+            "Studio could not reach Supabase. Cached entries and local edits are still available.",
+          );
+        } else {
+          setAllEntries([]);
+          setOfflineSyncError(
+            getErrorMessage(
+              error,
+              "Unable to load entries.",
+            ),
+          );
+        }
+      } finally {
+        setIsLoading(false);
+        await refreshOfflineQueueState();
+      }
+    },
+    [
+      refreshOfflineQueueState,
+      supabase,
+    ],
+  );
+
+  const syncPendingChanges =
+    useCallback(async () => {
+      if (
+        syncInProgressRef.current ||
+        typeof navigator ===
+          "undefined" ||
+        !navigator.onLine
+      ) {
+        return;
+      }
+
+      syncInProgressRef.current = true;
+      setIsSyncingOffline(true);
+      setOfflineSyncError("");
+
+      let syncedAny = false;
+
+      try {
+        const pending =
+          await getPendingEntryUpdates();
+
+        for (
+          const record of pending
+        ) {
+          try {
+            await saveEntryToSupabase(
+              record.entry,
+            );
+
+            await removePendingEntryUpdate(
+              record.entryId,
+            );
+
+            syncedAny = true;
+          } catch (error) {
+            const message =
+              getErrorMessage(
+                error,
+                "Unable to sync a saved offline entry.",
+              );
+
+            await recordEntrySyncFailure(
+              record.entryId,
+              message,
+            );
+
+            setOfflineSyncError(
+              message,
+            );
+
+            if (
+              isNetworkError(error)
+            ) {
+              setIsOnline(
+                navigator.onLine,
+              );
+
+              break;
+            }
+          }
+        }
+
+        await refreshOfflineQueueState();
+
+        if (syncedAny) {
+          await loadEntries();
+        }
+      } finally {
+        syncInProgressRef.current = false;
+        setIsSyncingOffline(false);
+      }
+    }, [
+      loadEntries,
+      refreshOfflineQueueState,
+      saveEntryToSupabase,
+    ]);
 
   useEffect(() => {
-    loadEntries();
+    void loadEntries();
   }, [loadEntries]);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+      setOfflineSyncError("");
+      void syncPendingChanges();
+    }
+
+    function handleOffline() {
+      setIsOnline(false);
+    }
+
+    function handleQueueChanged() {
+      void refreshOfflineQueueState();
+    }
+
+    window.addEventListener(
+      "online",
+      handleOnline,
+    );
+
+    window.addEventListener(
+      "offline",
+      handleOffline,
+    );
+
+    window.addEventListener(
+      OFFLINE_QUEUE_CHANGED_EVENT,
+      handleQueueChanged,
+    );
+
+    setIsOnline(
+      navigator.onLine,
+    );
+
+    void refreshOfflineQueueState().then(
+      () => {
+        if (navigator.onLine) {
+          void syncPendingChanges();
+        }
+      },
+    );
+
+    return () => {
+      window.removeEventListener(
+        "online",
+        handleOnline,
+      );
+
+      window.removeEventListener(
+        "offline",
+        handleOffline,
+      );
+
+      window.removeEventListener(
+        OFFLINE_QUEUE_CHANGED_EVENT,
+        handleQueueChanged,
+      );
+    };
+  }, [
+    refreshOfflineQueueState,
+    syncPendingChanges,
+  ]);
 
   const entries = useMemo(() => {
     return allEntries.filter((entry) => !entry.deletedAt);
@@ -436,112 +1086,98 @@ export function useEntries() {
   );
 
   const updateEntry = useCallback(
-    async function updateEntry(updatedEntry: Entry) {
-      const { error: entryError } = await supabase
-        .from("entries")
-        .update({
-          word: updatedEntry.word,
-          type: updatedEntry.type,
-          slug: updatedEntry.slug.trim() || slugify(updatedEntry.word),
-          pronunciation: updatedEntry.pronunciation,
-          part_of_speech: updatedEntry.partOfSpeech,
-          alternate_spellings: updatedEntry.alternateSpellings,
-          status: updatedEntry.status,
-          lifecycle: updatedEntry.lifecycle,
-          visibility: updatedEntry.visibility,
-          featured: updatedEntry.featured,
-          ai_added_status: updatedEntry.aiAddedStatus,
-          audio_filename: updatedEntry.audioFilename,
-          illustration_filename: updatedEntry.illustrationFilename,
-          illustration_notes: updatedEntry.illustrationNotes,
-          notes: updatedEntry.notes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", updatedEntry.id);
+    async function updateEntry(
+      updatedEntry: Entry,
+    ) {
+      setAllEntries(
+        (currentEntries) => {
+          const nextEntries =
+            currentEntries.map(
+              (entry) =>
+                String(entry.id) ===
+                String(
+                  updatedEntry.id,
+                )
+                  ? updatedEntry
+                  : entry,
+            );
 
-      if (entryError) {
-        alert(entryError.message);
-        return;
+          void saveEntrySnapshot(
+            nextEntries,
+          );
+
+          return nextEntries;
+        },
+      );
+
+      if (
+        typeof navigator !==
+          "undefined" &&
+        !navigator.onLine
+      ) {
+        await queueEntryUpdate(
+          updatedEntry,
+        );
+
+        setIsOnline(false);
+        setOfflineSyncError(
+          "",
+        );
+
+        await refreshOfflineQueueState();
+        return "queued" as const;
       }
 
-      const { data: existingMeanings, error: existingMeaningError } =
-        await supabase
-          .from("meanings")
-          .select("id")
-          .eq("entry_id", updatedEntry.id);
+      try {
+        await saveEntryToSupabase(
+          updatedEntry,
+        );
 
-      if (existingMeaningError) {
-        alert(existingMeaningError.message);
-        return;
-      }
+        await removePendingEntryUpdate(
+          String(updatedEntry.id),
+        );
 
-      const keptMeaningIds = updatedEntry.meanings
-        .filter((meaning) => !meaning.id.startsWith("temp-"))
-        .map((meaning) => meaning.id);
+        setIsOnline(true);
+        setOfflineSyncError("");
 
-      const meaningIdsToDelete = (existingMeanings ?? [])
-        .map((meaning) => meaning.id)
-        .filter((id) => !keptMeaningIds.includes(id));
+        await refreshOfflineQueueState();
+        await loadEntries();
 
-      if (meaningIdsToDelete.length > 0) {
-        const { error: deleteMeaningsError } = await supabase
-          .from("meanings")
-          .delete()
-          .in("id", meaningIdsToDelete);
+        return "synced" as const;
+      } catch (error) {
+        if (
+          isNetworkError(error)
+        ) {
+          await queueEntryUpdate(
+            updatedEntry,
+          );
 
-        if (deleteMeaningsError) {
-          alert(deleteMeaningsError.message);
-          return;
+          setIsOnline(
+            typeof navigator ===
+              "undefined"
+              ? false
+              : navigator.onLine,
+          );
+
+          setOfflineSyncError(
+            "Connection lost. This edit was saved locally and will sync automatically.",
+          );
+
+          await refreshOfflineQueueState();
+          return "queued" as const;
         }
+
+        throw toError(
+          error,
+          "Unable to save the entry.",
+        );
       }
-
-      for (let index = 0; index < updatedEntry.meanings.length; index++) {
-        const meaning = updatedEntry.meanings[index];
-
-        const meaningPayload = {
-          meaning_order: index + 1,
-          title: meaning.title,
-          definition: meaning.definition,
-          example: meaning.example,
-          plain_english: meaning.plainEnglish,
-          category: meaning.category,
-          tone: meaning.tone,
-          concepts_text: meaning.conceptsText,
-          usage_frequency: meaning.usageFrequency,
-          cultural_context: meaning.culturalContext,
-          editorial_status: meaning.editorialStatus,
-          ai_added_status: meaning.aiAddedStatus,
-          verified: meaning.verified,
-          source: meaning.source,
-          updated_at: new Date().toISOString(),
-        };
-
-        if (meaning.id.startsWith("temp-")) {
-          const { error } = await supabase.from("meanings").insert({
-            entry_id: updatedEntry.id,
-            ...meaningPayload,
-          });
-
-          if (error) {
-            alert(error.message);
-            return;
-          }
-        } else {
-          const { error } = await supabase
-            .from("meanings")
-            .update(meaningPayload)
-            .eq("id", meaning.id);
-
-          if (error) {
-            alert(error.message);
-            return;
-          }
-        }
-      }
-
-      await loadEntries();
     },
-    [loadEntries, supabase]
+    [
+      loadEntries,
+      refreshOfflineQueueState,
+      saveEntryToSupabase,
+    ],
   );
 
   const updateStatus = useCallback(
@@ -773,11 +1409,16 @@ export function useEntries() {
     draftCount,
     needsReviewStatusCount,
     reviewQueueCount,
-    reviewCount: needsReviewStatusCount,
+    reviewCount: reviewQueueCount,
     verifiedCount,
     archivedCount,
     publishedCount,
     trashCount,
     isLoading,
+    isOnline,
+    pendingSyncCount,
+    isSyncingOffline,
+    offlineSyncError,
+    syncPendingChanges,
   };
 }

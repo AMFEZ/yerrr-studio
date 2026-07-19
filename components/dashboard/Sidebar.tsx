@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { STUDIO_VERSION } from "@/lib/studioVersion";
 
 type EntryLike = Record<string, any>;
 
@@ -34,6 +35,7 @@ type SidebarProps = {
   onOpenAIAssistant?: () => void;
   onOpenActivity?: () => void;
   onOpenBackup?: () => void;
+  onOpenSettings?: () => void;
   onOpenGraphStats?: () => void;
   onOpenGraphExplorer?: () => void;
   onOpenGraphMigration?: () => void;
@@ -42,6 +44,10 @@ type SidebarProps = {
 
   userEmail?: string | null;
   onLogout?: () => void;
+
+  reviewCount?: number;
+  draftCount?: number;
+  publishQueueCount?: number;
 
   className?: string;
 } & Record<string, any>;
@@ -57,7 +63,7 @@ type NavItem = {
   action?: () => void;
 };
 
-const VERSION_LABEL = "Alpha 5.0";
+const VERSION_LABEL = STUDIO_VERSION;
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -187,9 +193,20 @@ export function Sidebar(props: SidebarProps) {
 
   const counts = useMemo(() => {
     const total = entries.filter((entry) => !isTrashed(entry)).length;
-    const review = entries.filter(needsReview).length;
-    const draft = entries.filter(isDraft).length;
-    const published = entries.filter(isPublished).length;
+    const review =
+      typeof props.reviewCount === "number"
+        ? props.reviewCount
+        : entries.filter(needsReview).length;
+
+    const draft =
+      typeof props.draftCount === "number"
+        ? props.draftCount
+        : entries.filter(isDraft).length;
+
+    const published =
+      typeof props.publishQueueCount === "number"
+        ? props.publishQueueCount
+        : entries.filter(isPublished).length;
     const trash = entries.filter(isTrashed).length;
     const duplicates = countDuplicates(entries);
 
@@ -201,7 +218,12 @@ export function Sidebar(props: SidebarProps) {
       trash,
       duplicates,
     };
-  }, [entries]);
+  }, [
+    entries,
+    props.draftCount,
+    props.publishQueueCount,
+    props.reviewCount,
+  ]);
 
   const mainItems: NavItem[] = [
   {
@@ -239,15 +261,13 @@ export function Sidebar(props: SidebarProps) {
 ];
 
   const toolItems: NavItem[] = [
-{
-  key: "ai-assistant",
-  label: "AI Assistant",
-  description:
-    "Ask grounded questions and review lexicon content.",
-  icon: "✨",
-  action: props.onOpenAIAssistant,
-},
-
+    {
+      key: "ai-assistant",
+      label: "AI Assistant",
+      description: "Ask grounded questions and review lexicon content.",
+      icon: "✨",
+      action: props.onOpenAIAssistant,
+    },
     {
       key: "advanced-search",
       label: "Advanced Search",
@@ -270,18 +290,11 @@ export function Sidebar(props: SidebarProps) {
       count: counts.trash,
     },
     {
-      key: "activity",
-      label: "Activity Log",
-      description: "View recent local CMS changes.",
-      icon: "🧾",
-      action: props.onOpenActivity,
-    },
-    {
-      key: "backup",
-      label: "Import / Export",
-      description: "Export backups and preview imports.",
-      icon: "💾",
-      action: props.onOpenBackup,
+      key: "settings",
+      label: "Settings",
+      description: "Account, activity, backups, and offline sync.",
+      icon: "⚙️",
+      action: props.onOpenSettings,
     },
   ];
 
@@ -340,15 +353,6 @@ export function Sidebar(props: SidebarProps) {
         handler(key);
       }
     });
-  }
-
-  function createEntry() {
-    const handler =
-      props.onCreateEntry ?? props.onNewEntry ?? props.openCreateModal;
-
-    if (typeof handler === "function") {
-      handler();
-    }
   }
 
   function renderNavItem(item: NavItem) {
@@ -444,148 +448,69 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <>
-      <div className="md:hidden">
-        <div className="mb-4 rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-400">
+      <div className="sticky top-0 z-40 border-b border-neutral-800 bg-neutral-950/95 p-3 backdrop-blur lg:hidden">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-yellow-400">
                 YERRR Studio
               </p>
-
-              <h2 className="text-lg font-black text-zinc-950">
+              <p className="truncate text-sm font-black text-white">
                 Lexicon CMS
-              </h2>
+              </p>
             </div>
 
-            <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-bold text-zinc-600">
-              {VERSION_LABEL}
-            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="hidden rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-[10px] font-black text-neutral-400 sm:inline-flex">
+                {VERSION_LABEL}
+              </span>
+
+              {props.onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={props.onOpenSettings}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-900 text-lg text-white transition hover:border-yellow-400"
+                  aria-label="Open Studio Settings"
+                >
+                  ⚙️
+                </button>
+              )}
+            </div>
           </div>
 
-          <select
-            value={
-              [
-                "all",
-                "review",
-                "draft",
-                "published",
-                "duplicates",
-                "trash",
-              ].includes(activeKey)
-                ? activeKey
-                : "all"
-            }
-            onChange={(event) => navigate(event.target.value)}
-            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm font-semibold text-zinc-900 outline-none focus:border-zinc-400"
-          >
-            <option value="all">All Entries</option>
-            <option value="review">Review Queue</option>
-            <option value="draft">Draft Queue</option>
-            <option value="published">Publish Queue</option>
-            <option value="duplicates">Duplicates</option>
-            <option value="trash">Trash</option>
-          </select>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {(props.onCreateEntry ||
-              props.onNewEntry ||
-              props.openCreateModal) && (
-              <button
-                type="button"
-                onClick={createEntry}
-                className="rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
-              >
-                + Entry
-              </button>
-            )}
-
-{props.onOpenAIAssistant && (
-  <button
-    type="button"
-    onClick={props.onOpenAIAssistant}
-    className="col-span-2 rounded-2xl bg-zinc-950 px-3 py-3 text-xs font-bold text-white transition hover:bg-zinc-800"
-  >
-    ✨ AI Assistant
-  </button>
-)}
+          <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <select
+              value={
+                [
+                  "all",
+                  "draft",
+                  "review",
+                  "published",
+                  "duplicates",
+                  "trash",
+                ].includes(activeKey)
+                  ? activeKey
+                  : "all"
+              }
+              onChange={(event) => navigate(event.target.value)}
+              className="min-w-0 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm font-black text-white outline-none focus:border-yellow-400"
+            >
+              <option value="all">All Entries · {counts.total}</option>
+              <option value="draft">Draft Queue · {counts.draft}</option>
+              <option value="review">Review Queue · {counts.review}</option>
+              <option value="published">Publish Queue · {counts.published}</option>
+              <option value="duplicates">Duplicates · {counts.duplicates}</option>
+              <option value="trash">Trash · {counts.trash}</option>
+            </select>
 
             {props.onOpenAdvancedSearch && (
               <button
                 type="button"
                 onClick={props.onOpenAdvancedSearch}
-                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
+                className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-900 text-lg text-white transition hover:border-yellow-400"
+                aria-label="Open Advanced Search"
               >
-                🔎 Search
-              </button>
-            )}
-
-            {props.onOpenActivity && (
-              <button
-                type="button"
-                onClick={props.onOpenActivity}
-                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                Activity
-              </button>
-            )}
-
-            {props.onOpenBackup && (
-              <button
-                type="button"
-                onClick={props.onOpenBackup}
-                className="rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                Backup
-              </button>
-            )}
-
-            {props.onOpenCloudConceptEditor && (
-              <button
-                type="button"
-                onClick={props.onOpenCloudConceptEditor}
-                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                🧠 Concepts
-              </button>
-            )}
-
-            {props.onOpenCloudRelationshipEditor && (
-              <button
-                type="button"
-                onClick={props.onOpenCloudRelationshipEditor}
-                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                🔗 Relationships
-              </button>
-            )}
-
-            {props.onOpenGraphStats && (
-              <button
-                type="button"
-                onClick={props.onOpenGraphStats}
-                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                📊 Graph Health
-              </button>
-            )}
-
-            {props.onOpenGraphExplorer && (
-              <button
-                type="button"
-                onClick={props.onOpenGraphExplorer}
-                className="col-span-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-xs font-bold text-zinc-800 transition hover:bg-zinc-50"
-              >
-                🧭 Graph Explorer
-              </button>
-            )}
-
-            {props.onOpenGraphMigration && (
-              <button
-                type="button"
-                onClick={props.onOpenGraphMigration}
-                className="col-span-2 rounded-2xl border border-zinc-200 bg-zinc-100 px-3 py-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-200"
-              >
-                🧳 Migration Backup
+                🔎
               </button>
             )}
           </div>
@@ -594,7 +519,7 @@ export function Sidebar(props: SidebarProps) {
 
       <aside
         className={cx(
-          "hidden md:block md:w-80 md:shrink-0",
+          "hidden lg:block lg:w-80 lg:shrink-0",
           props.className
         )}
       >
@@ -622,18 +547,6 @@ export function Sidebar(props: SidebarProps) {
               </span>
             </div>
           </div>
-
-          {(props.onCreateEntry ||
-            props.onNewEntry ||
-            props.openCreateModal) && (
-            <button
-              type="button"
-              onClick={createEntry}
-              className="mb-4 w-full rounded-2xl bg-zinc-950 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-zinc-800"
-            >
-              + Create New Entry
-            </button>
-          )}
 
           <div className="space-y-6">
             <section>
