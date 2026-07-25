@@ -6,10 +6,12 @@ import {
   useState,
 } from "react";
 
-import type { Entry } from "@/types/entry";
+import type {
+  Entry,
+  Meaning,
+} from "@/types/entry";
 
 import type {
-  AIMissingFieldDecision,
   AIMissingFieldSuggestion,
   AIMissingFieldsResponse,
   AIMissingFieldsResult,
@@ -18,19 +20,125 @@ import type {
 type AIMissingFieldsPanelProps = {
   entry: Entry;
   onClose: () => void;
+  onApplyEntry: (entry: Entry) => Promise<void>;
 };
 
-function createPendingDecisions(
-  result: AIMissingFieldsResult,
-) {
-  return Object.fromEntries(
-    result.suggestions.map(
-      (suggestion) => [
-        suggestion.id,
-        "pending" as AIMissingFieldDecision,
-      ],
-    ),
+type EntryEditableField =
+  | "pronunciation"
+  | "partOfSpeech";
+
+type MeaningEditableField =
+  | "title"
+  | "definition"
+  | "example"
+  | "category"
+  | "tone"
+  | "conceptsText"
+  | "usageFrequency";
+
+const ENTRY_EDITABLE_FIELDS =
+  new Set<EntryEditableField>([
+    "pronunciation",
+    "partOfSpeech",
+  ]);
+
+const MEANING_EDITABLE_FIELDS =
+  new Set<MeaningEditableField>([
+    "title",
+    "definition",
+    "example",
+    "category",
+    "tone",
+    "conceptsText",
+    "usageFrequency",
+  ]);
+
+function isEntryEditableField(
+  value: string,
+): value is EntryEditableField {
+  return ENTRY_EDITABLE_FIELDS.has(
+    value as EntryEditableField,
   );
+}
+
+function isMeaningEditableField(
+  value: string,
+): value is MeaningEditableField {
+  return MEANING_EDITABLE_FIELDS.has(
+    value as MeaningEditableField,
+  );
+}
+
+function applySuggestionToEntry(
+  entry: Entry,
+  suggestion: AIMissingFieldSuggestion,
+): Entry | null {
+  const suggestedValue =
+    suggestion.suggestedValue.trim();
+
+  if (!suggestedValue) {
+    return null;
+  }
+
+  if (
+    isEntryEditableField(
+      suggestion.fieldPath,
+    )
+  ) {
+    return {
+      ...entry,
+      [suggestion.fieldPath]:
+        suggestedValue,
+    };
+  }
+
+  const meaningMatch =
+    suggestion.fieldPath.match(
+      /^meanings\[(\d+)\]\.([A-Za-z]+)$/,
+    );
+
+  if (!meaningMatch) {
+    return null;
+  }
+
+  const meaningIndex = Number(
+    meaningMatch[1],
+  );
+
+  const meaningField =
+    meaningMatch[2];
+
+  if (
+    !Number.isInteger(meaningIndex) ||
+    meaningIndex < 0 ||
+    meaningIndex >=
+      entry.meanings.length ||
+    !isMeaningEditableField(
+      meaningField,
+    )
+  ) {
+    return null;
+  }
+
+  const meanings =
+    entry.meanings.map(
+      (meaning, index): Meaning => {
+        if (index !== meaningIndex) {
+          return meaning;
+        }
+
+        return {
+          ...meaning,
+          [meaningField]:
+            suggestedValue,
+        };
+      },
+    );
+
+  return {
+    ...entry,
+    meanings,
+  };
 }
 
 function confidenceLabel(
@@ -39,39 +147,42 @@ function confidenceLabel(
   return `${suggestion.confidence} confidence`;
 }
 
-function formatApprovedPlan(
+function removeSuggestion(
   result: AIMissingFieldsResult,
-  approvedSuggestions:
-    AIMissingFieldSuggestion[],
-) {
-  return [
-    `YERRR Studio AI Missing Fields Plan: ${result.entryWord}`,
-    `Approved drafts: ${approvedSuggestions.length}`,
-    "",
-    ...approvedSuggestions.flatMap(
-      (suggestion, index) => [
-        `${index + 1}. ${suggestion.fieldLabel}`,
-        `Field path: ${suggestion.fieldPath}`,
-        `Suggested value: ${suggestion.suggestedValue}`,
-        `Reason: ${suggestion.reason}`,
-        `Confidence: ${suggestion.confidence}`,
-        suggestion.requiresVerification
-          ? `Verification: ${
-              suggestion.verificationNote ||
-              "Human verification required."
-            }`
-          : "Verification: Standard editorial review.",
-        "",
-      ],
-    ),
-    "These drafts have not been written to Supabase.",
-  ].join("\n");
+  suggestionIds: Set<string>,
+): AIMissingFieldsResult {
+  const suggestions =
+    result.suggestions.filter(
+      (suggestion) =>
+        !suggestionIds.has(
+          suggestion.id,
+        ),
+    );
+
+  return {
+    ...result,
+    suggestions,
+    missingFieldCount:
+      suggestions.length,
+    summary:
+      suggestions.length === 0
+        ? "All generated suggestions have been applied or dismissed."
+        : `${suggestions.length} suggestion${
+            suggestions.length === 1
+              ? ""
+              : "s"
+          } remaining.`,
+  };
 }
 
 export function AIMissingFieldsPanel({
   entry,
   onClose,
+  onApplyEntry,
 }: AIMissingFieldsPanelProps) {
+  const [workingEntry, setWorkingEntry] =
+    useState<Entry>(entry);
+
   const [result, setResult] =
     useState<AIMissingFieldsResult | null>(
       null,
@@ -83,82 +194,79 @@ export function AIMissingFieldsPanel({
   const [error, setError] =
     useState("");
 
+  const [notice, setNotice] =
+    useState("");
+
   const [isLoading, setIsLoading] =
     useState(false);
 
   const [isCollapsed, setIsCollapsed] =
     useState(false);
 
+  const [
+    applyingSuggestionId,
+    setApplyingSuggestionId,
+  ] = useState("");
+
+  const [
+    isApplyingSafeDrafts,
+    setIsApplyingSafeDrafts,
+  ] = useState(false);
+
   const [copiedLabel, setCopiedLabel] =
     useState("");
 
-  const [decisions, setDecisions] =
-    useState<
-      Record<
-        string,
-        AIMissingFieldDecision
-      >
-    >({});
+  const [appliedCount, setAppliedCount] =
+    useState(0);
+
+  const [deniedCount, setDeniedCount] =
+    useState(0);
 
   useEffect(() => {
+    setWorkingEntry(entry);
     setResult(null);
     setModelLabel("");
     setError("");
+    setNotice("");
     setIsLoading(false);
     setIsCollapsed(false);
+    setApplyingSuggestionId("");
+    setIsApplyingSafeDrafts(false);
     setCopiedLabel("");
-    setDecisions({});
+    setAppliedCount(0);
+    setDeniedCount(0);
   }, [entry.id]);
 
-  const decisionSummary = useMemo(() => {
+  const safeDrafts = useMemo(() => {
     if (!result) {
-      return {
-        pending: 0,
-        approved: 0,
-        rejected: 0,
-      };
+      return [];
     }
 
-    return result.suggestions.reduce(
-      (summary, suggestion) => {
-        const decision =
-          decisions[suggestion.id] ??
-          "pending";
-
-        summary[decision] += 1;
-
-        return summary;
-      },
-      {
-        pending: 0,
-        approved: 0,
-        rejected: 0,
-      },
+    return result.suggestions.filter(
+      (suggestion) =>
+        suggestion.suggestedValue.trim() &&
+        !suggestion.requiresVerification &&
+        suggestion.confidence !== "low" &&
+        applySuggestionToEntry(
+          workingEntry,
+          suggestion,
+        ) !== null,
     );
-  }, [decisions, result]);
+  }, [result, workingEntry]);
 
-  const approvedSuggestions =
-    useMemo(() => {
-      if (!result) {
-        return [];
-      }
-
-      return result.suggestions.filter(
-        (suggestion) =>
-          decisions[suggestion.id] ===
-            "approved" &&
-          suggestion.suggestedValue.trim(),
-      );
-    }, [decisions, result]);
+  const isApplying =
+    Boolean(applyingSuggestionId) ||
+    isApplyingSafeDrafts;
 
   async function runMissingFieldsScan() {
-    if (isLoading) {
+    if (isLoading || isApplying) {
       return;
     }
 
     try {
       setIsLoading(true);
       setError("");
+      setNotice("");
       setCopiedLabel("");
 
       const response = await fetch(
@@ -172,7 +280,7 @@ export function AIMissingFieldsPanel({
           },
 
           body: JSON.stringify({
-            entry,
+            entry: workingEntry,
           }),
         },
       );
@@ -198,15 +306,12 @@ export function AIMissingFieldsPanel({
       }
 
       setResult(payload.result);
-      setModelLabel(payload.model ?? "");
-      setDecisions(
-        createPendingDecisions(
-          payload.result,
-        ),
+      setModelLabel(
+        payload.model ?? "",
       );
+      setNotice("");
     } catch (scanError) {
       setResult(null);
-      setDecisions({});
 
       setError(
         scanError instanceof Error
@@ -218,58 +323,167 @@ export function AIMissingFieldsPanel({
     }
   }
 
-  function setDecision(
-    suggestionId: string,
-    decision: AIMissingFieldDecision,
+  async function approveSuggestion(
+    suggestion: AIMissingFieldSuggestion,
   ) {
-    setDecisions(
-      (currentDecisions) => ({
-        ...currentDecisions,
-        [suggestionId]: decision,
-      }),
-    );
-  }
-
-  function approveSafeDrafts() {
-    if (!result) {
+    if (isApplying) {
       return;
     }
 
-    setDecisions(
-      (currentDecisions) => {
-        const nextDecisions = {
-          ...currentDecisions,
-        };
+    const nextEntry =
+      applySuggestionToEntry(
+        workingEntry,
+        suggestion,
+      );
 
-        result.suggestions.forEach(
-          (suggestion) => {
-            const isSafeDraft =
-              suggestion.suggestedValue.trim() &&
-              !suggestion.requiresVerification &&
-              suggestion.confidence !==
-                "low";
+    if (!nextEntry) {
+      setError(
+        `The AI returned an unsupported field path: ${suggestion.fieldPath}`,
+      );
+      return;
+    }
 
-            if (isSafeDraft) {
-              nextDecisions[
-                suggestion.id
-              ] = "approved";
-            }
-          },
+    try {
+      setApplyingSuggestionId(
+        suggestion.id,
+      );
+      setError("");
+      setNotice("");
+
+      await onApplyEntry(nextEntry);
+
+      setWorkingEntry(nextEntry);
+      setAppliedCount(
+        (current) => current + 1,
+      );
+
+      setResult((currentResult) =>
+        currentResult
+          ? removeSuggestion(
+              currentResult,
+              new Set([
+                suggestion.id,
+              ]),
+            )
+          : currentResult,
+      );
+
+      setNotice(
+        `${suggestion.fieldLabel} applied and saved.`,
+      );
+    } catch (applyError) {
+      setError(
+        applyError instanceof Error
+          ? applyError.message
+          : "The suggestion could not be saved.",
+      );
+    } finally {
+      setApplyingSuggestionId("");
+    }
+  }
+
+  function denySuggestion(
+    suggestion: AIMissingFieldSuggestion,
+  ) {
+    if (isApplying) {
+      return;
+    }
+
+    setResult((currentResult) =>
+      currentResult
+        ? removeSuggestion(
+            currentResult,
+            new Set([
+              suggestion.id,
+            ]),
+          )
+        : currentResult,
+    );
+
+    setDeniedCount(
+      (current) => current + 1,
+    );
+
+    setError("");
+    setNotice(
+      `${suggestion.fieldLabel} dismissed.`,
+    );
+  }
+
+  async function applySafeDrafts() {
+    if (
+      !result ||
+      safeDrafts.length === 0 ||
+      isApplying
+    ) {
+      return;
+    }
+
+    let nextEntry = workingEntry;
+    const appliedIds =
+      new Set<string>();
+
+    safeDrafts.forEach(
+      (suggestion) => {
+        const updatedEntry =
+          applySuggestionToEntry(
+            nextEntry,
+            suggestion,
+          );
+
+        if (!updatedEntry) {
+          return;
+        }
+
+        nextEntry = updatedEntry;
+        appliedIds.add(
+          suggestion.id,
         );
-
-        return nextDecisions;
       },
     );
-  }
 
-  function resetDecisions() {
-    if (!result) {
+    if (appliedIds.size === 0) {
       return;
     }
 
-    setDecisions(
-      createPendingDecisions(result),
-    );
+    try {
+      setIsApplyingSafeDrafts(true);
+      setError("");
+      setNotice("");
+
+      await onApplyEntry(nextEntry);
+
+      setWorkingEntry(nextEntry);
+      setAppliedCount(
+        (current) =>
+          current + appliedIds.size,
+      );
+
+      setResult((currentResult) =>
+        currentResult
+          ? removeSuggestion(
+              currentResult,
+              appliedIds,
+            )
+          : currentResult,
+      );
+
+      setNotice(
+        `${appliedIds.size} safe draft${
+          appliedIds.size === 1
+            ? ""
+            : "s"
+        } applied and saved.`,
+      );
+    } catch (applyError) {
+      setError(
+        applyError instanceof Error
+          ? applyError.message
+          : "The safe drafts could not be saved.",
+      );
+    } finally {
+      setIsApplyingSafeDrafts(false);
+    }
   }
 
   async function copyText(
@@ -284,8 +498,11 @@ export function AIMissingFieldsPanel({
       setCopiedLabel(label);
 
       window.setTimeout(() => {
-        setCopiedLabel((current) =>
-          current === label ? "" : current,
+        setCopiedLabel(
+          (current) =>
+            current === label
+              ? ""
+              : current,
         );
       }, 1_800);
     } catch {
@@ -294,12 +511,12 @@ export function AIMissingFieldsPanel({
   }
 
   return (
-    <aside className="fixed inset-x-3 bottom-24 z-[96] overflow-hidden rounded-3xl border border-violet-400/30 bg-neutral-950 shadow-2xl md:bottom-6 md:left-6 md:right-auto md:w-[500px]">
+    <aside className="fixed inset-x-3 bottom-24 z-[96] overflow-hidden rounded-3xl border border-violet-400/30 bg-neutral-950 shadow-2xl md:bottom-6 md:left-6 md:right-auto md:w-[520px]">
       <header className="border-b border-neutral-800 bg-violet-400/10 p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">
-              Alpha 5.6
+              Alpha 5.17G
             </p>
 
             <h2 className="mt-1 text-lg font-black text-white">
@@ -307,7 +524,7 @@ export function AIMissingFieldsPanel({
             </h2>
 
             <p className="mt-1 text-xs text-neutral-400">
-              {entry.word}
+              {workingEntry.word}
               {modelLabel
                 ? ` · ${modelLabel}`
                 : ""}
@@ -319,7 +536,8 @@ export function AIMissingFieldsPanel({
               type="button"
               onClick={() =>
                 setIsCollapsed(
-                  (current) => !current,
+                  (current) =>
+                    !current,
                 )
               }
               className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-black text-neutral-300 hover:border-violet-400 hover:text-violet-200"
@@ -346,14 +564,16 @@ export function AIMissingFieldsPanel({
           <div className="max-h-[64vh] space-y-4 overflow-y-auto p-4">
             <section className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-4">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-violet-200">
-                Human-controlled drafting
+                Apply suggestions directly
               </p>
 
               <p className="mt-2 text-sm leading-6 text-neutral-400">
-                AI scans only empty fields. It
-                cannot overwrite existing text,
-                change the Entry Editor, or save
-                anything to Supabase.
+                AI scans supported empty
+                fields only. Approve writes the
+                suggestion into the entry and
+                saves it. Deny removes the
+                suggestion without changing the
+                entry.
               </p>
 
               <button
@@ -361,21 +581,36 @@ export function AIMissingFieldsPanel({
                 onClick={() =>
                   void runMissingFieldsScan()
                 }
-                disabled={isLoading}
+                disabled={
+                  isLoading ||
+                  isApplying
+                }
                 className="mt-4 w-full rounded-xl bg-violet-400 px-4 py-3 text-sm font-black text-black hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isLoading
                   ? "Scanning entry..."
                   : result
-                    ? "Run scan again"
+                    ? "Scan remaining fields"
                     : "Scan missing fields"}
               </button>
             </section>
 
+            {notice && (
+              <section className="rounded-2xl border border-green-400/30 bg-green-400/10 p-4">
+                <p className="font-black text-green-100">
+                  Saved
+                </p>
+
+                <p className="mt-1 text-sm text-green-100/70">
+                  {notice}
+                </p>
+              </section>
+            )}
+
             {error && (
               <section className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4">
                 <p className="font-black text-red-100">
-                  Scan failed
+                  Action failed
                 </p>
 
                 <p className="mt-2 text-sm leading-6 text-red-100/70">
@@ -387,52 +622,37 @@ export function AIMissingFieldsPanel({
             {result && (
               <>
                 <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    <div className="rounded-xl bg-neutral-950 p-3">
-                      <p className="text-lg font-black text-white">
-                        {
-                          result.missingFieldCount
-                        }
-                      </p>
-
-                      <p className="mt-1 text-[9px] font-black uppercase tracking-[0.14em] text-neutral-600">
-                        Missing
-                      </p>
-                    </div>
-
+                  <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-xl bg-neutral-950 p-3">
                       <p className="text-lg font-black text-yellow-200">
                         {
-                          decisionSummary.pending
+                          result.suggestions
+                            .length
                         }
                       </p>
 
                       <p className="mt-1 text-[9px] font-black uppercase tracking-[0.14em] text-neutral-600">
-                        Pending
+                        Remaining
                       </p>
                     </div>
 
                     <div className="rounded-xl bg-neutral-950 p-3">
                       <p className="text-lg font-black text-green-200">
-                        {
-                          decisionSummary.approved
-                        }
+                        {appliedCount}
                       </p>
 
                       <p className="mt-1 text-[9px] font-black uppercase tracking-[0.14em] text-neutral-600">
-                        Approved
+                        Applied
                       </p>
                     </div>
 
                     <div className="rounded-xl bg-neutral-950 p-3">
                       <p className="text-lg font-black text-red-200">
-                        {
-                          decisionSummary.rejected
-                        }
+                        {deniedCount}
                       </p>
 
                       <p className="mt-1 text-[9px] font-black uppercase tracking-[0.14em] text-neutral-600">
-                        Rejected
+                        Denied
                       </p>
                     </div>
                   </div>
@@ -441,29 +661,19 @@ export function AIMissingFieldsPanel({
                     {result.summary}
                   </p>
 
-                  {result.suggestions.length >
-                    0 && (
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={
-                          approveSafeDrafts
-                        }
-                        className="rounded-xl bg-green-400 px-3 py-3 text-xs font-black text-black hover:bg-green-300"
-                      >
-                        Approve safe drafts
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={
-                          resetDecisions
-                        }
-                        className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-xs font-black text-neutral-300 hover:border-neutral-500 hover:text-white"
-                      >
-                        Reset decisions
-                      </button>
-                    </div>
+                  {safeDrafts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void applySafeDrafts()
+                      }
+                      disabled={isApplying}
+                      className="mt-4 w-full rounded-xl bg-green-400 px-3 py-3 text-xs font-black text-black hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {isApplyingSafeDrafts
+                        ? "Applying safe drafts..."
+                        : `Apply safe drafts · ${safeDrafts.length}`}
+                    </button>
                   )}
                 </section>
 
@@ -471,13 +681,14 @@ export function AIMissingFieldsPanel({
                 0 ? (
                   <section className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5 text-center">
                     <p className="font-black text-green-100">
-                      No missing fields detected
+                      Suggestions cleared
                     </p>
 
                     <p className="mt-2 text-sm text-green-100/70">
-                      This entry already contains
-                      the supported Lexicon V8
-                      fields.
+                      Every generated suggestion
+                      has been applied or denied.
+                      Run another scan to confirm
+                      what remains.
                     </p>
                   </section>
                 ) : (
@@ -489,13 +700,12 @@ export function AIMissingFieldsPanel({
                     <div className="space-y-3">
                       {result.suggestions.map(
                         (suggestion) => {
-                          const decision =
-                            decisions[
-                              suggestion.id
-                            ] ?? "pending";
-
                           const copyKey =
                             `suggestion-${suggestion.id}`;
+
+                          const isThisApplying =
+                            applyingSuggestionId ===
+                            suggestion.id;
 
                           return (
                             <article
@@ -503,15 +713,9 @@ export function AIMissingFieldsPanel({
                                 suggestion.id
                               }
                               className={`rounded-2xl border p-4 ${
-                                decision ===
-                                "approved"
-                                  ? "border-green-400/30 bg-green-400/10"
-                                  : decision ===
-                                      "rejected"
-                                    ? "border-red-400/20 bg-red-400/5"
-                                    : suggestion.requiresVerification
-                                      ? "border-yellow-400/20 bg-yellow-400/5"
-                                      : "border-neutral-800 bg-neutral-900"
+                                suggestion.requiresVerification
+                                  ? "border-yellow-400/20 bg-yellow-400/5"
+                                  : "border-neutral-800 bg-neutral-900"
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
@@ -529,31 +733,17 @@ export function AIMissingFieldsPanel({
                                   </p>
                                 </div>
 
-                                <span
-                                  className={`rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${
-                                    decision ===
-                                    "approved"
-                                      ? "bg-green-400/20 text-green-200"
-                                      : decision ===
-                                          "rejected"
-                                        ? "bg-red-400/20 text-red-200"
-                                        : "bg-neutral-800 text-neutral-400"
-                                  }`}
-                                >
-                                  {decision}
+                                <span className="rounded-full bg-neutral-800 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-neutral-400">
+                                  {confidenceLabel(
+                                    suggestion,
+                                  )}
                                 </span>
                               </div>
-
-                              <p className="mt-3 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-500">
-                                {confidenceLabel(
-                                  suggestion,
-                                )}
-                              </p>
 
                               {suggestion.suggestedValue ? (
                                 <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/10 p-3">
                                   <p className="text-[9px] font-black uppercase tracking-[0.14em] text-violet-200/60">
-                                    AI draft
+                                    AI suggestion
                                   </p>
 
                                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-violet-50">
@@ -565,14 +755,13 @@ export function AIMissingFieldsPanel({
                               ) : (
                                 <div className="mt-3 rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3">
                                   <p className="text-sm font-black text-yellow-100">
-                                    No safe draft
-                                    generated
+                                    No useful draft generated
                                   </p>
 
                                   <p className="mt-2 text-xs leading-5 text-yellow-100/70">
-                                    This field needs
-                                    evidence or direct
-                                    editorial input.
+                                    Deny this suggestion
+                                    or add the value
+                                    manually.
                                   </p>
                                 </div>
                               )}
@@ -586,7 +775,7 @@ export function AIMissingFieldsPanel({
                               {suggestion.requiresVerification && (
                                 <div className="mt-3 rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3">
                                   <p className="text-[9px] font-black uppercase tracking-[0.14em] text-yellow-300">
-                                    Verification required
+                                    Verify before publishing
                                   </p>
 
                                   <p className="mt-2 text-xs leading-5 text-yellow-100/70">
@@ -601,30 +790,32 @@ export function AIMissingFieldsPanel({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    setDecision(
-                                      suggestion.id,
-                                      "approved",
+                                    void approveSuggestion(
+                                      suggestion,
                                     )
                                   }
                                   disabled={
-                                    !suggestion.suggestedValue
+                                    isApplying ||
+                                    !suggestion.suggestedValue.trim()
                                   }
                                   className="rounded-xl bg-green-400 px-2 py-2 text-xs font-black text-black hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-30"
                                 >
-                                  Approve
+                                  {isThisApplying
+                                    ? "Saving..."
+                                    : "Approve"}
                                 </button>
 
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    setDecision(
-                                      suggestion.id,
-                                      "rejected",
+                                    denySuggestion(
+                                      suggestion,
                                     )
                                   }
-                                  className="rounded-xl bg-red-500/20 px-2 py-2 text-xs font-black text-red-200 hover:bg-red-500/30"
+                                  disabled={isApplying}
+                                  className="rounded-xl bg-red-500/20 px-2 py-2 text-xs font-black text-red-200 hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-30"
                                 >
-                                  Reject
+                                  Deny
                                 </button>
 
                                 <button
@@ -636,6 +827,7 @@ export function AIMissingFieldsPanel({
                                     )
                                   }
                                   disabled={
+                                    isApplying ||
                                     !suggestion.suggestedValue
                                   }
                                   className="rounded-xl border border-neutral-700 bg-neutral-950 px-2 py-2 text-xs font-black text-neutral-300 hover:border-violet-400 hover:text-violet-200 disabled:cursor-not-allowed disabled:opacity-30"
@@ -690,39 +882,11 @@ export function AIMissingFieldsPanel({
             )}
           </div>
 
-          <footer className="grid grid-cols-2 gap-2 border-t border-neutral-800 bg-neutral-950 p-4">
-            <button
-              type="button"
-              disabled={
-                !result ||
-                approvedSuggestions.length ===
-                  0
-              }
-              onClick={() => {
-                if (!result) {
-                  return;
-                }
-
-                void copyText(
-                  "approved-plan",
-                  formatApprovedPlan(
-                    result,
-                    approvedSuggestions,
-                  ),
-                );
-              }}
-              className="rounded-xl bg-violet-400 px-4 py-3 text-sm font-black text-black hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              {copiedLabel ===
-              "approved-plan"
-                ? "Plan copied"
-                : `Copy approved · ${approvedSuggestions.length}`}
-            </button>
-
+          <footer className="border-t border-neutral-800 bg-neutral-950 p-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-black text-neutral-300 hover:border-neutral-500 hover:text-white"
+              className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-black text-neutral-300 hover:border-neutral-500 hover:text-white"
             >
               Close tool
             </button>

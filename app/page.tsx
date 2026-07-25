@@ -360,6 +360,7 @@ const {
   const [isMergeConceptsOpen, setIsMergeConceptsOpen] = useState(false);
   const [graphRevision, setGraphRevision] = useState(0);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
+  const [selectedEntryRevision, setSelectedEntryRevision] = useState(0);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("all");
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
   const [isBulkActionsOpen, setIsBulkActionsOpen] = useState(false);
@@ -878,6 +879,27 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     ) {
       return await updateEntry(
         updatedEntry,
+      );
+    },
+    [updateEntry],
+  );
+
+  const handleApplyAIMissingField = useCallback(
+    async function handleApplyAIMissingField(
+      updatedEntry: Entry,
+    ) {
+      await updateEntry(updatedEntry);
+
+      setSelectedEntry(updatedEntry);
+      setSelectedEntryRevision(
+        (currentRevision) =>
+          currentRevision + 1,
+      );
+
+      addActivity(
+        "update",
+        "AI suggestion applied",
+        `${updatedEntry.word} was updated from AI Missing Fields.`,
       );
     },
     [updateEntry],
@@ -2752,6 +2774,7 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
 
       {selectedEntry && (
   <EntryEditorModal
+    key={`entry-editor-${selectedEntry.id}-${selectedEntryRevision}`}
     entry={selectedEntry}
     onClose={() => {
       setIsAIMissingFieldsOpen(false);
@@ -2781,6 +2804,9 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
     <AIMissingFieldsPanel
       key={`ai-missing-fields-${selectedEntry.id}`}
       entry={selectedEntry}
+      onApplyEntry={
+        handleApplyAIMissingField
+      }
       onClose={() =>
         setIsAIMissingFieldsOpen(false)
       }
