@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { syncEntryCloudConcepts } from "@/lib/syncEntryCloudConcepts";
 import {
+  isEntryInDraftQueue,
+  isEntryInReviewQueue,
+  isEntryVerifiedOrPublishedReady,
+} from "@/lib/editorialStatusRules";
+import {
   getPendingEntryUpdates,
   loadEntrySnapshot,
   mergePendingEntryUpdates,
@@ -159,23 +164,6 @@ function entryMatchesSearch(entry: Entry, search: string) {
         meaning.source.toLowerCase().includes(query)
     )
   );
-}
-
-function isEntryInReviewQueue(entry: Entry) {
-  if (entry.status === "Needs Review") return true;
-  if (entry.meanings.length === 0) return true;
-
-  return entry.meanings.some((meaning) => {
-    return (
-      meaning.editorialStatus === "Needs Review" ||
-      !meaning.title.trim() ||
-      !meaning.definition.trim() ||
-      !meaning.example.trim() ||
-      !meaning.category.trim() ||
-      !meaning.tone.trim() ||
-      !meaning.usageFrequency.trim()
-    );
-  });
 }
 
 function getErrorMessage(
@@ -990,17 +978,13 @@ export function useEntries() {
     return filteredEntries.filter(isEntryInReviewQueue);
   }, [filteredEntries]);
 
-  const draftCount = entries.filter((entry) => entry.status === "Draft").length;
+  const draftCount = entries.filter(isEntryInDraftQueue).length;
 
-  const needsReviewStatusCount = entries.filter(
-    (entry) => entry.status === "Needs Review"
-  ).length;
+  const needsReviewStatusCount = entries.filter(isEntryInReviewQueue).length;
 
   const reviewQueueCount = reviewQueueEntries.length;
 
-  const verifiedCount = entries.filter(
-    (entry) => entry.status === "Verified" || entry.status === "Published"
-  ).length;
+  const verifiedCount = entries.filter(isEntryVerifiedOrPublishedReady).length;
 
   const archivedCount = entries.filter(
     (entry) => entry.status === "Archived"
@@ -1191,11 +1175,17 @@ export function useEntries() {
         .eq("id", id);
 
       if (error) {
-        alert(error.message);
-        return;
+        const normalizedError = toError(
+          error,
+          "Unable to update the entry status.",
+        );
+
+        alert(normalizedError.message);
+        return false;
       }
 
       await loadEntries();
+      return true;
     },
     [loadEntries, supabase]
   );
@@ -1223,12 +1213,17 @@ export function useEntries() {
   );
 
   const deleteEntry = useCallback(
-    async function deleteEntry(id: string) {
-      const confirmed = window.confirm(
-        "Move this entry to Trash? You can restore it later."
-      );
+    async function deleteEntry(
+      id: string,
+      options?: { skipConfirmation?: boolean },
+    ) {
+      const confirmed =
+        options?.skipConfirmation === true ||
+        window.confirm(
+          "Move this entry to Trash? You can restore it later.",
+        );
 
-      if (!confirmed) return;
+      if (!confirmed) return false;
 
       const { data: entry, error: fetchError } = await supabase
         .from("entries")
@@ -1237,8 +1232,17 @@ export function useEntries() {
         .single();
 
       if (fetchError) {
-        alert(fetchError.message);
-        return;
+        const normalizedError = toError(
+          fetchError,
+          "Unable to read the entry before moving it to Trash.",
+        );
+
+        if (options?.skipConfirmation) {
+          throw normalizedError;
+        }
+
+        alert(normalizedError.message);
+        return false;
       }
 
       const previousStatus = normalizeEntryStatus(entry.status);
@@ -1253,11 +1257,21 @@ export function useEntries() {
         .eq("id", id);
 
       if (error) {
-        alert(error.message);
-        return;
+        const normalizedError = toError(
+          error,
+          "Unable to move the entry to Trash.",
+        );
+
+        if (options?.skipConfirmation) {
+          throw normalizedError;
+        }
+
+        alert(normalizedError.message);
+        return false;
       }
 
       await loadEntries();
+      return true;
     },
     [loadEntries, supabase]
   );

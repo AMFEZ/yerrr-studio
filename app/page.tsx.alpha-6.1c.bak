@@ -2219,23 +2219,21 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
 
     <section className="flex-1">
         <div className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:py-10 lg:px-8">
-          <header className="mb-8 md:mb-10">
-            <div className="mx-auto max-w-4xl text-center">
+          <header className="mb-8 grid gap-6 md:mb-10 lg:grid-cols-[minmax(220px,0.62fr)_minmax(0,1.38fr)] lg:items-end">
+            <div>
               <p className="mb-2 text-xs font-bold uppercase tracking-[0.3em] text-yellow-400 sm:text-sm">
                 Dashboard
               </p>
-
-              <h1 className="text-balance text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
+              <h1 className="text-4xl font-black tracking-tight sm:text-5xl md:text-6xl">
                 The NYC Slang Lexicon
               </h1>
-
-              <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-neutral-400 sm:text-base">
-                Capture, review, verify, and publish the living language of New York City.
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-neutral-400 sm:text-base">
+                Capture, review, verify, and publish the living language of New
+                York City.
               </p>
             </div>
 
-            <div className="mt-6">
-              <DashboardWorkflowActions
+            <DashboardWorkflowActions
               disabled={isWorking || isLoading}
               isSprintActive={isCompletionSprintActive}
               sprintReviewedCount={completionSprintReviewedEntryIds.length}
@@ -2271,7 +2269,6 @@ if (typeof possibleEntry === "object" && possibleEntry !== null) {
               onOpenContentReady={() => setIsStudioContentReadyOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
             />
-            </div>
           </header>
 
           {(isLoading || isWorking) && (

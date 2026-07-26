@@ -1,1163 +1,418 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useMemo, useState, type ChangeEvent } from "react";
 
 import type { Entry } from "@/types/entry";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
-import type {
-  AIRelationshipDecision,
-  AIRelationshipDirection,
-  AIRelationshipSuggestion,
-  AIRelationshipSuggestionResponse,
-  AIRelationshipSuggestionResult,
-  AIRelationshipType,
-} from "@/types/aiRelationships";
+type RelationshipType =
+  | "similar_meaning"
+  | "opposite"
+  | "variation"
+  | "response"
+  | "contextually_related"
+  | "broader_term"
+  | "narrower_term";
 
-import type {
-  AIRelationshipHandoff,
-} from "@/types/aiRelationshipHandoff";
+type RelationshipConfidence = "low" | "medium" | "high";
+
+type RelationshipSuggestion = {
+  id: string;
+  sourceEntryId: string;
+  sourceWord: string;
+  targetEntryId: string;
+  targetWord: string;
+  relationshipType: RelationshipType;
+  strength: number;
+  confidence: RelationshipConfidence;
+  reason: string;
+  verificationNote: string;
+};
+
+type RelationshipSuggestionResult = {
+  summary: string;
+  suggestionCount: number;
+  suggestions: RelationshipSuggestion[];
+};
+
+type RelationshipSuggestionResponse = {
+  result?: RelationshipSuggestionResult;
+  model?: string;
+  error?: string;
+};
 
 type AIRelationshipSuggestionsPanelProps = {
   entries: Entry[];
+  isOnline: boolean;
   onClose: () => void;
   onOpenEntry?: (entry: Entry) => void;
-  onOpenRelationshipEditor?: () => void;
-
-  onSendApprovedPlan?: (
-    handoff: AIRelationshipHandoff,
-  ) => void;
+  onGraphChanged?: () => void;
 };
 
-type ScoredCandidate = {
-  entry: Entry;
-  score: number;
+const MAX_CONTEXT_ENTRIES = 60;
+
+const RELATIONSHIP_LABELS: Record<RelationshipType, string> = {
+  similar_meaning: "Similar meaning",
+  opposite: "Opposite",
+  variation: "Variation",
+  response: "Natural response",
+  contextually_related: "Contextually related",
+  broader_term: "Broader term",
+  narrower_term: "Narrower term",
 };
-
-const MAX_CANDIDATES = 24;
-
-const STOP_WORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "as",
-  "at",
-  "be",
-  "by",
-  "for",
-  "from",
-  "in",
-  "is",
-  "it",
-  "of",
-  "on",
-  "or",
-  "the",
-  "to",
-  "was",
-  "with",
-  "you",
-  "your",
-]);
 
 function normalize(value: unknown) {
   return String(value ?? "")
     .toLowerCase()
-    .replace(/['’]/g, "")
+    .replace(/[’']/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function normalizeKey(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-}
-
-function readField(
-  source: unknown,
-  aliases: string[],
-) {
-  if (
-    !source ||
-    typeof source !== "object" ||
-    Array.isArray(source)
-  ) {
-    return "";
-  }
-
-  const aliasSet = new Set(
-    aliases.map(normalizeKey),
-  );
-
-  for (const [key, value] of Object.entries(
-    source as Record<
-      string,
-      unknown
-    >,
-  )) {
-    if (
-      aliasSet.has(normalizeKey(key)) &&
-      (
-        typeof value === "string" ||
-        typeof value === "number"
-      )
-    ) {
-      return String(value).trim();
-    }
-  }
-
-  return "";
-}
-
-function splitAlternateSpellings(
-  value: unknown,
-) {
-  return String(value ?? "")
-    .split(/[,;/\n]/g)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function getWordForms(entry: Entry) {
-  const forms = [
-    entry.word,
-
-    String(entry.slug ?? "")
-      .replace(/-/g, " "),
-
-    ...splitAlternateSpellings(
+function collectEntrySignals(entry: Entry) {
+  return normalize(
+    [
+      entry.word,
+      entry.slug,
+      entry.type,
+      entry.partOfSpeech,
       entry.alternateSpellings,
-    ),
-  ]
-    .map(normalize)
-    .filter(Boolean);
-
-  return Array.from(new Set(forms));
-}
-
-function getMeaningText(entry: Entry) {
-  const meanings = Array.isArray(
-    entry.meanings,
+      ...entry.meanings.flatMap((meaning) => [
+        meaning.title,
+        meaning.definition,
+        meaning.example,
+        meaning.category,
+        meaning.tone,
+        meaning.conceptsText,
+      ]),
+    ].join(" "),
   )
-    ? entry.meanings
-    : [];
-
-  return meanings
-    .flatMap((meaning) => [
-      readField(
-        meaning,
-        [
-          "definition",
-          "meaning",
-          "gloss",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "plainEnglish",
-          "plain_english",
-          "plainMeaning",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "example",
-          "exampleSentence",
-          "example_sentence",
-          "usageExample",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "culturalContext",
-          "cultural_context",
-          "culture",
-          "context",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "tone",
-          "tones",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "partOfSpeech",
-          "part_of_speech",
-          "pos",
-          "grammar",
-          "type",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "conceptId",
-          "concept_id",
-          "conceptID",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "conceptName",
-          "concept_name",
-          "concept",
-          "category",
-        ],
-      ),
-    ])
-    .filter(Boolean)
-    .join(" ");
+    .split(" ")
+    .filter((token) => token.length > 2);
 }
 
-function getEntryText(entry: Entry) {
-  return [
-    entry.word,
-    entry.slug,
-    entry.alternateSpellings,
-    getMeaningText(entry),
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
+function getCandidateScore(focus: Entry, candidate: Entry) {
+  const focusSignals = new Set(collectEntrySignals(focus));
+  const candidateSignals = new Set(collectEntrySignals(candidate));
 
-function getTokenSet(value: string) {
-  return new Set(
-    normalize(value)
-      .split(" ")
-      .filter(
-        (token) =>
-          token.length > 1 &&
-          !STOP_WORDS.has(token),
-      ),
-  );
-}
+  let score = 0;
 
-function jaccardSimilarity(
-  firstSet: Set<string>,
-  secondSet: Set<string>,
-) {
-  if (
-    firstSet.size === 0 ||
-    secondSet.size === 0
-  ) {
-    return 0;
-  }
-
-  let intersectionCount = 0;
-
-  firstSet.forEach((token) => {
-    if (secondSet.has(token)) {
-      intersectionCount += 1;
-    }
+  focusSignals.forEach((signal) => {
+    if (candidateSignals.has(signal)) score += 1;
   });
 
-  const unionCount = new Set([
-    ...firstSet,
-    ...secondSet,
-  ]).size;
-
-  return unionCount === 0
-    ? 0
-    : intersectionCount /
-        unionCount;
-}
-
-function createBigrams(value: string) {
-  const compactValue =
-    normalize(value).replace(
-      /\s+/g,
-      "",
-    );
-
-  if (compactValue.length < 2) {
-    return compactValue
-      ? [compactValue]
-      : [];
-  }
-
-  const bigrams: string[] = [];
-
-  for (
-    let index = 0;
-    index <
-    compactValue.length - 1;
-    index += 1
-  ) {
-    bigrams.push(
-      compactValue.slice(
-        index,
-        index + 2,
-      ),
-    );
-  }
-
-  return bigrams;
-}
-
-function diceSimilarity(
-  firstValue: string,
-  secondValue: string,
-) {
-  const firstBigrams =
-    createBigrams(firstValue);
-
-  const secondBigrams =
-    createBigrams(secondValue);
-
   if (
-    firstBigrams.length === 0 ||
-    secondBigrams.length === 0
+    normalize(focus.word).includes(normalize(candidate.word)) ||
+    normalize(candidate.word).includes(normalize(focus.word))
   ) {
-    return 0;
+    score += 8;
   }
 
-  const availableSecond =
-    [...secondBigrams];
-
-  let matchCount = 0;
-
-  firstBigrams.forEach((bigram) => {
-    const matchIndex =
-      availableSecond.indexOf(
-        bigram,
-      );
-
-    if (matchIndex === -1) {
-      return;
-    }
-
-    matchCount += 1;
-
-    availableSecond.splice(
-      matchIndex,
-      1,
-    );
-  });
-
-  return (
-    (2 * matchCount) /
-    (
-      firstBigrams.length +
-      secondBigrams.length
-    )
-  );
+  return score;
 }
 
-function maximumWordSimilarity(
-  firstForms: string[],
-  secondForms: string[],
-) {
-  let maximum = 0;
-
-  firstForms.forEach(
-    (firstForm) => {
-      secondForms.forEach(
-        (secondForm) => {
-          maximum = Math.max(
-            maximum,
-            diceSimilarity(
-              firstForm,
-              secondForm,
-            ),
-          );
-        },
-      );
-    },
-  );
-
-  return maximum;
-}
-
-function getConceptSet(entry: Entry) {
-  const meanings = Array.isArray(
-    entry.meanings,
-  )
-    ? entry.meanings
-    : [];
-
-  const values = meanings.flatMap(
-    (meaning) => [
-      readField(
-        meaning,
-        [
-          "conceptId",
-          "concept_id",
-          "conceptID",
-        ],
-      ),
-
-      readField(
-        meaning,
-        [
-          "conceptName",
-          "concept_name",
-          "concept",
-          "category",
-        ],
-      ),
-    ],
-  );
-
-  return new Set(
-    values
-      .map(normalize)
-      .filter(Boolean),
-  );
-}
-
-function getPartOfSpeechSet(
-  entry: Entry,
-) {
-  const meanings = Array.isArray(
-    entry.meanings,
-  )
-    ? entry.meanings
-    : [];
-
-  return new Set(
-    meanings
-      .map((meaning) =>
-        normalize(
-          readField(
-            meaning,
-            [
-              "partOfSpeech",
-              "part_of_speech",
-              "pos",
-              "grammar",
-              "type",
-            ],
-          ),
-        ),
-      )
-      .filter(Boolean),
-  );
-}
-
-function hasSetOverlap(
-  firstSet: Set<string>,
-  secondSet: Set<string>,
-) {
-  for (const value of firstSet) {
-    if (secondSet.has(value)) {
-      return true;
-    }
+function buildContextEntries(entries: Entry[], focusEntryId: string) {
+  if (!focusEntryId) {
+    return [...entries]
+      .sort((a, b) => a.word.localeCompare(b.word))
+      .slice(0, MAX_CONTEXT_ENTRIES);
   }
 
-  return false;
-}
-
-function scoreCandidate(
-  sourceEntry: Entry,
-  candidateEntry: Entry,
-) {
-  const sourceTokens = getTokenSet(
-    getEntryText(sourceEntry),
+  const focus = entries.find(
+    (entry) => String(entry.id) === focusEntryId,
   );
 
-  const candidateTokens =
-    getTokenSet(
-      getEntryText(candidateEntry),
-    );
+  if (!focus) return [];
 
-  const semanticSimilarity =
-    jaccardSimilarity(
-      sourceTokens,
-      candidateTokens,
-    );
-
-  const wordSimilarity =
-    maximumWordSimilarity(
-      getWordForms(sourceEntry),
-      getWordForms(candidateEntry),
-    );
-
-  const sharedConcept =
-    hasSetOverlap(
-      getConceptSet(sourceEntry),
-      getConceptSet(candidateEntry),
-    );
-
-  const sharedPartOfSpeech =
-    hasSetOverlap(
-      getPartOfSpeechSet(
-        sourceEntry,
-      ),
-      getPartOfSpeechSet(
-        candidateEntry,
-      ),
-    );
-
-  return Math.min(
-    100,
-    Math.round(
-      semanticSimilarity * 60 +
-        wordSimilarity * 20 +
-        (sharedConcept ? 22 : 0) +
-        (
-          sharedPartOfSpeech
-            ? 8
-            : 0
-        ),
-    ),
-  );
-}
-
-function buildCandidateEntries(
-  sourceEntry: Entry,
-  entries: Entry[],
-) {
-  const scoredCandidates:
-    ScoredCandidate[] = entries
-    .filter(
-      (entry) =>
-        String(entry.id) !==
-        String(sourceEntry.id),
-    )
+  const candidates = entries
+    .filter((entry) => String(entry.id) !== focusEntryId)
     .map((entry) => ({
       entry,
-
-      score: scoreCandidate(
-        sourceEntry,
-        entry,
-      ),
+      score: getCandidateScore(focus, entry),
     }))
     .sort(
-      (first, second) =>
-        second.score -
-          first.score ||
-        first.entry.word.localeCompare(
-          second.entry.word,
-        ),
-    );
+      (a, b) =>
+        b.score - a.score || a.entry.word.localeCompare(b.entry.word),
+    )
+    .slice(0, MAX_CONTEXT_ENTRIES - 1)
+    .map((item) => item.entry);
 
-  const strongCandidates =
-    scoredCandidates.filter(
-      (candidate) =>
-        candidate.score >= 6,
-    );
-
-  if (
-    strongCandidates.length >= 8
-  ) {
-    return strongCandidates.slice(
-      0,
-      MAX_CANDIDATES,
-    );
-  }
-
-  return scoredCandidates.slice(
-    0,
-    Math.min(
-      12,
-      scoredCandidates.length,
-    ),
-  );
+  return [focus, ...candidates];
 }
 
-function relationshipTypeLabel(
-  type: AIRelationshipType,
-) {
-  if (type === "same_concept") {
-    return "Same concept";
-  }
-
-  if (type === "related_to") {
-    return "Related to";
-  }
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
 
   if (
-    type === "contextual_pair"
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
   ) {
-    return "Contextual pair";
+    return error.message;
   }
 
-  if (type === "derived_form") {
-    return "Derived form";
-  }
-
-  if (
-    type === "phrase_component"
-  ) {
-    return "Phrase component";
-  }
-
-  return (
-    type.charAt(0).toUpperCase() +
-    type.slice(1)
-  );
+  return "The relationship action failed.";
 }
 
-function directionLabel(
-  direction:
-    AIRelationshipDirection,
-) {
-  if (
-    direction ===
-    "source_to_target"
-  ) {
-    return "Source → target";
+function confidenceClasses(confidence: RelationshipConfidence) {
+  if (confidence === "high") {
+    return "border-green-400/30 bg-green-400/10 text-green-100";
   }
 
-  if (
-    direction ===
-    "target_to_source"
-  ) {
-    return "Target → source";
+  if (confidence === "medium") {
+    return "border-yellow-400/30 bg-yellow-400/10 text-yellow-100";
   }
 
-  return "Bidirectional";
-}
-
-function createPendingDecisions(
-  result:
-    AIRelationshipSuggestionResult,
-) {
-  return Object.fromEntries(
-    result.suggestions.map(
-      (suggestion) => [
-        suggestion.id,
-        "pending" as AIRelationshipDecision,
-      ],
-    ),
-  );
-}
-
-function formatApprovedPlan(
-  result:
-    AIRelationshipSuggestionResult,
-
-  approvedSuggestions:
-    AIRelationshipSuggestion[],
-) {
-  return [
-    "YERRR Studio AI Relationship Plan",
-    `Source entry: ${result.sourceEntryWord}`,
-    `Approved suggestions: ${approvedSuggestions.length}`,
-    "",
-
-    ...approvedSuggestions.flatMap(
-      (suggestion, index) => [
-        `${index + 1}. ${result.sourceEntryWord} ↔ ${suggestion.targetWord}`,
-        `Target entry ID: ${suggestion.targetEntryId}`,
-        `Relationship type: ${relationshipTypeLabel(
-          suggestion.relationshipType,
-        )}`,
-        `Direction: ${directionLabel(
-          suggestion.direction,
-        )}`,
-        `Confidence: ${suggestion.confidence}`,
-        `Score: ${suggestion.relationshipScore}/100`,
-        `Reasoning: ${suggestion.reasoning}`,
-        `Shared signals: ${
-          suggestion.sharedSignals.join(
-            "; ",
-          ) || "None listed"
-        }`,
-        `Differences: ${
-          suggestion.differences.join(
-            "; ",
-          ) || "None listed"
-        }`,
-        `Verification: ${
-          suggestion.verificationNote
-        }`,
-        "",
-      ],
-    ),
-
-    "No Knowledge Graph relationships were created automatically.",
-  ].join("\n");
-}
-
-function createRelationshipHandoff(
-  result:
-    AIRelationshipSuggestionResult,
-
-  approvedSuggestions:
-    AIRelationshipSuggestion[],
-): AIRelationshipHandoff {
-  return {
-    id: `relationship-handoff-${Date.now()}`,
-
-    createdAt:
-      new Date().toISOString(),
-
-    sourceEntryId:
-      result.sourceEntryId,
-
-    sourceEntryWord:
-      result.sourceEntryWord,
-
-    approvedRelationships:
-      approvedSuggestions,
-
-    verificationChecklist:
-      result.verificationChecklist,
-  };
+  return "border-neutral-700 bg-neutral-900 text-neutral-300";
 }
 
 export function AIRelationshipSuggestionsPanel({
   entries,
+  isOnline,
   onClose,
   onOpenEntry,
-  onOpenRelationshipEditor,
-  onSendApprovedPlan,
+  onGraphChanged,
 }: AIRelationshipSuggestionsPanelProps) {
-  const [search, setSearch] =
-    useState("");
-
-  const [
-    selectedEntryId,
-    setSelectedEntryId,
-  ] = useState(
-    entries[0]
-      ? String(entries[0].id)
-      : "",
+  const sortedEntries = useMemo(
+    () => [...entries].sort((a, b) => a.word.localeCompare(b.word)),
+    [entries],
   );
 
+  const entryById = useMemo(
+    () => new Map(entries.map((entry) => [String(entry.id), entry])),
+    [entries],
+  );
+
+  const [focusEntryId, setFocusEntryId] = useState("");
   const [result, setResult] =
-    useState<AIRelationshipSuggestionResult | null>(
-      null,
-    );
+    useState<RelationshipSuggestionResult | null>(null);
+  const [modelLabel, setModelLabel] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [applyingId, setApplyingId] = useState("");
+  const [isApplyingAll, setIsApplyingAll] = useState(false);
+  const [appliedCount, setAppliedCount] = useState(0);
+  const [dismissedCount, setDismissedCount] = useState(0);
 
-  const [
-    decisions,
-    setDecisions,
-  ] = useState<
-    Record<
-      string,
-      AIRelationshipDecision
-    >
-  >({});
-
-  const [modelLabel, setModelLabel] =
-    useState("");
-
-  const [error, setError] =
-    useState("");
-
-  const [isLoading, setIsLoading] =
-    useState(false);
-
-  const [copiedLabel, setCopiedLabel] =
-    useState("");
-
-  const sortedEntries = useMemo(() => {
-    return [...entries].sort(
-      (first, second) =>
-        first.word.localeCompare(
-          second.word,
-        ),
-    );
-  }, [entries]);
-
-  const selectedEntry = useMemo(() => {
-    return (
-      entries.find(
-        (entry) =>
-          String(entry.id) ===
-          selectedEntryId,
-      ) ?? null
-    );
-  }, [
-    entries,
-    selectedEntryId,
-  ]);
-
-  const filteredEntries =
-    useMemo(() => {
-      const normalizedSearch =
-        normalize(search);
-
-      const filtered =
-        normalizedSearch
-          ? sortedEntries.filter(
-              (entry) =>
-                normalize(
-                  [
-                    entry.word,
-                    entry.slug,
-                    entry.alternateSpellings,
-                  ].join(" "),
-                ).includes(
-                  normalizedSearch,
-                ),
-            )
-          : sortedEntries;
-
-      if (
-        selectedEntry &&
-        !filtered.some(
-          (entry) =>
-            String(entry.id) ===
-            String(
-              selectedEntry.id,
-            ),
-        )
-      ) {
-        return [
-          selectedEntry,
-          ...filtered,
-        ];
-      }
-
-      return filtered;
-    }, [
-      search,
-      selectedEntry,
-      sortedEntries,
-    ]);
-
-  const scoredCandidates =
-    useMemo(() => {
-      if (!selectedEntry) {
-        return [];
-      }
-
-      return buildCandidateEntries(
-        selectedEntry,
-        entries,
-      );
-    }, [
-      entries,
-      selectedEntry,
-    ]);
-
-  const approvedSuggestions =
-    useMemo(() => {
-      if (!result) {
-        return [];
-      }
-
-      return result.suggestions.filter(
-        (suggestion) =>
-          decisions[suggestion.id] ===
-          "approved",
-      );
-    }, [
-      decisions,
-      result,
-    ]);
-
-  const decisionCounts =
-    useMemo(() => {
-      if (!result) {
-        return {
-          pending: 0,
-          approved: 0,
-          rejected: 0,
-        };
-      }
-
-      return result.suggestions.reduce(
-        (counts, suggestion) => {
-          const decision =
-            decisions[
-              suggestion.id
-            ] ?? "pending";
-
-          counts[decision] += 1;
-
-          return counts;
-        },
-        {
-          pending: 0,
-          approved: 0,
-          rejected: 0,
-        },
-      );
-    }, [
-      decisions,
-      result,
-    ]);
-
-  useEffect(() => {
-    if (entries.length === 0) {
-      setSelectedEntryId("");
-      return;
-    }
-
-    const selectedStillExists =
-      entries.some(
-        (entry) =>
-          String(entry.id) ===
-          selectedEntryId,
-      );
-
-    if (!selectedStillExists) {
-      setSelectedEntryId(
-        String(entries[0].id),
-      );
-    }
-  }, [
-    entries,
-    selectedEntryId,
-  ]);
-
-  useEffect(() => {
-    setResult(null);
-    setDecisions({});
-    setModelLabel("");
-    setError("");
-    setCopiedLabel("");
-  }, [selectedEntryId]);
-
-  function setDecision(
-    suggestionId: string,
-    decision:
-      AIRelationshipDecision,
-  ) {
-    setDecisions(
-      (currentDecisions) => ({
-        ...currentDecisions,
-
-        [suggestionId]:
-          decision,
-      }),
-    );
-  }
-
-  function approveStrongSuggestions() {
-    if (!result) {
-      return;
-    }
-
-    setDecisions(
-      (currentDecisions) => {
-        const nextDecisions = {
-          ...currentDecisions,
-        };
-
-        result.suggestions.forEach(
-          (suggestion) => {
-            if (
-              suggestion.confidence ===
-                "high" &&
-              suggestion.relationshipScore >=
-                70 &&
-              !suggestion.requiresVerification
-            ) {
-              nextDecisions[
-                suggestion.id
-              ] = "approved";
-            }
-          },
-        );
-
-        return nextDecisions;
-      },
-    );
-  }
-
-  function resetDecisions() {
-    if (!result) {
-      return;
-    }
-
-    setDecisions(
-      createPendingDecisions(
-        result,
-      ),
-    );
-  }
+  const pendingSuggestions = result?.suggestions ?? [];
 
   async function runSuggestions() {
-    if (
-      !selectedEntry ||
-      isLoading
-    ) {
-      return;
-    }
+    if (isLoading) return;
 
     try {
       setIsLoading(true);
       setError("");
-      setResult(null);
-      setModelLabel("");
-      setDecisions({});
-      setCopiedLabel("");
+      setMessage("");
+      setAppliedCount(0);
+      setDismissedCount(0);
 
-      const response = await fetch(
-        "/api/ai-relationship-suggestions",
-        {
-          method: "POST",
+      const contextEntries = buildContextEntries(entries, focusEntryId);
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+      if (contextEntries.length < 2) {
+        throw new Error(
+          "At least two active entries are required to suggest relationships.",
+        );
+      }
 
-          body: JSON.stringify({
-            sourceEntry:
-              selectedEntry,
+      const response = await fetch("/api/ai-relationship-suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: contextEntries,
+          focusEntryId: focusEntryId || undefined,
+        }),
+      });
 
-            candidates:
-              scoredCandidates.map(
-                (candidate) =>
-                  candidate.entry,
-              ),
-          }),
-        },
-      );
-
-      let payload:
-        AIRelationshipSuggestionResponse =
-        {};
+      let payload: RelationshipSuggestionResponse = {};
 
       try {
-        payload =
-          (await response.json()) as AIRelationshipSuggestionResponse;
+        payload = (await response.json()) as RelationshipSuggestionResponse;
       } catch {
         payload = {};
       }
 
-      if (
-        !response.ok ||
-        !payload.result
-      ) {
+      if (!response.ok || !payload.result) {
         throw new Error(
-          payload.error ||
-            "The relationship suggestion request failed.",
+          payload.error || "The relationship suggestion scan failed.",
         );
       }
 
       setResult(payload.result);
-
-      setModelLabel(
-        payload.model ?? "",
-      );
-
-      setDecisions(
-        createPendingDecisions(
-          payload.result,
-        ),
-      );
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "The relationship suggestion request failed.",
-      );
+      setModelLabel(payload.model ?? "");
+    } catch (scanError) {
+      setResult(null);
+      setModelLabel("");
+      setError(getErrorMessage(scanError));
     } finally {
       setIsLoading(false);
     }
   }
 
-  async function copyText(
-    label: string,
-    value: string,
-  ) {
-    try {
-      await navigator.clipboard.writeText(
-        value,
+  function removeSuggestion(suggestionId: string) {
+    setResult((currentResult) => {
+      if (!currentResult) return currentResult;
+
+      const suggestions = currentResult.suggestions.filter(
+        (suggestion) => suggestion.id !== suggestionId,
       );
 
-      setCopiedLabel(label);
+      return {
+        ...currentResult,
+        suggestionCount: suggestions.length,
+        suggestions,
+      };
+    });
+  }
 
-      window.setTimeout(() => {
-        setCopiedLabel(
-          (currentLabel) =>
-            currentLabel === label
-              ? ""
-              : currentLabel,
-        );
-      }, 1_800);
+  function dismissSuggestion(suggestionId: string) {
+    removeSuggestion(suggestionId);
+    setDismissedCount((current) => current + 1);
+    setMessage("Relationship suggestion dismissed. No database change was made.");
+  }
 
-      return true;
-    } catch {
-      setCopiedLabel("");
-      return false;
+  async function applySuggestion(
+    suggestion: RelationshipSuggestion,
+    options: { quiet?: boolean } = {},
+  ) {
+    if (!isOnline) {
+      throw new Error(
+        "Relationship creation requires an active connection so the graph stays consistent.",
+      );
+    }
+
+    const sourceEntry = entryById.get(suggestion.sourceEntryId);
+    const targetEntry = entryById.get(suggestion.targetEntryId);
+
+    if (!sourceEntry || !targetEntry) {
+      throw new Error(
+        "One of the suggested entries is no longer active in the lexicon.",
+      );
+    }
+
+    const supabase = getSupabaseBrowserClient();
+
+    const { data, error: rpcError } = await supabase.rpc(
+      "apply_ai_entry_relationship",
+      {
+        p_source_entry_id: suggestion.sourceEntryId,
+        p_target_entry_id: suggestion.targetEntryId,
+        p_relationship_type: suggestion.relationshipType,
+        p_strength: suggestion.strength,
+        p_notes: [
+          `AI suggestion: ${suggestion.reason}`,
+          suggestion.verificationNote
+            ? `Verification: ${suggestion.verificationNote}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
+    );
+
+    if (rpcError) throw rpcError;
+
+    const responseRecord = Array.isArray(data) ? data[0] : data;
+    const status =
+      responseRecord && typeof responseRecord === "object" && "status" in responseRecord
+        ? String(responseRecord.status)
+        : "created";
+
+    removeSuggestion(suggestion.id);
+    setAppliedCount((current) => current + 1);
+
+    window.dispatchEvent(new CustomEvent("yerrr:cloud-graph-changed"));
+    onGraphChanged?.();
+
+    if (!options.quiet) {
+      setMessage(
+        status === "exists"
+          ? `${sourceEntry.word} and ${targetEntry.word} were already linked. The duplicate suggestion was cleared.`
+          : `${sourceEntry.word} → ${targetEntry.word} was added to the Knowledge Graph.`,
+      );
+    }
+
+    return status;
+  }
+
+  async function handleApplySuggestion(suggestion: RelationshipSuggestion) {
+    if (applyingId || isApplyingAll) return;
+
+    try {
+      setApplyingId(suggestion.id);
+      setError("");
+      setMessage("");
+      await applySuggestion(suggestion);
+    } catch (applyError) {
+      setError(getErrorMessage(applyError));
+    } finally {
+      setApplyingId("");
     }
   }
 
-  async function copyApprovedPlan(
-  openRelationshipEditor = false,
-) {
-  if (
-    !result ||
-    approvedSuggestions.length === 0
-  ) {
-    return;
-  }
+  async function applyAllPending() {
+    if (pendingSuggestions.length === 0 || isApplyingAll) return;
 
-  const handoff =
-    createRelationshipHandoff(
-      result,
-      approvedSuggestions,
+    if (!isOnline) {
+      setError(
+        "Relationship creation requires an active connection so the graph stays consistent.",
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Apply ${pendingSuggestions.length} pending relationship suggestion${
+        pendingSuggestions.length === 1 ? "" : "s"
+      } to Supabase?`,
     );
 
-  await copyText(
-    "approved-plan",
-    formatApprovedPlan(
-      result,
-      approvedSuggestions,
-    ),
-  );
+    if (!confirmed) return;
 
-  if (
-    openRelationshipEditor &&
-    onSendApprovedPlan
-  ) {
-    onClose();
-    onSendApprovedPlan(handoff);
-    return;
+    setIsApplyingAll(true);
+    setError("");
+    setMessage("");
+
+    let successCount = 0;
+    const failures: string[] = [];
+
+    for (const suggestion of [...pendingSuggestions]) {
+      try {
+        await applySuggestion(suggestion, { quiet: true });
+        successCount += 1;
+      } catch (applyError) {
+        failures.push(
+          `${suggestion.sourceWord} → ${suggestion.targetWord}: ${getErrorMessage(
+            applyError,
+          )}`,
+        );
+      }
+    }
+
+    setIsApplyingAll(false);
+
+    if (successCount > 0) {
+      setMessage(
+        `${successCount} relationship suggestion${
+          successCount === 1 ? " was" : "s were"
+        } applied to the Knowledge Graph.`,
+      );
+    }
+
+    if (failures.length > 0) {
+      setError(failures.join(" · "));
+    }
   }
 
-  if (
-    openRelationshipEditor &&
-    onOpenRelationshipEditor
-  ) {
-    onClose();
-    onOpenRelationshipEditor();
-  }
-}
-function openEntry(entry: Entry) {
-  onClose();
-  onOpenEntry?.(entry);
-}
-
-function openTargetEntry(
-  suggestion: AIRelationshipSuggestion,
-) {
-  const targetEntry = entries.find(
-    (entry) =>
-      String(entry.id) ===
-      String(suggestion.targetEntryId),
-  );
-
-  if (!targetEntry) {
-    return;
+  function openEntry(entryId: string) {
+    const entry = entryById.get(entryId);
+    if (!entry || !onOpenEntry) return;
+    onOpenEntry(entry);
   }
 
-  openEntry(targetEntry);
-}
   return (
-    <div
-      className="fixed inset-0 z-[83] bg-black/80 backdrop-blur-sm"
-      role="presentation"
-    >
+    <div className="fixed inset-0 z-[78] bg-black/75 backdrop-blur-sm">
       <button
         type="button"
         aria-label="Close AI relationship suggestions"
@@ -1165,38 +420,25 @@ function openTargetEntry(
         className="absolute inset-0 h-full w-full cursor-default"
       />
 
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="ai-relationship-title"
-        className="absolute bottom-0 right-0 flex h-[94vh] w-full flex-col overflow-hidden rounded-t-3xl border-t border-neutral-800 bg-neutral-950 shadow-2xl md:bottom-auto md:top-0 md:h-full md:max-w-4xl md:rounded-none md:rounded-l-3xl md:border-l md:border-t-0"
-      >
+      <aside className="absolute bottom-0 right-0 flex h-[94vh] w-full flex-col overflow-hidden rounded-t-3xl border-t border-neutral-800 bg-neutral-950 shadow-2xl md:bottom-auto md:top-0 md:h-full md:max-w-3xl md:rounded-none md:rounded-l-3xl md:border-l md:border-t-0">
         <header className="border-b border-neutral-800 bg-neutral-950/95 p-5 backdrop-blur sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-300">
-                Alpha 5.9
+                Alpha 5.17H4
               </p>
-
-              <h2
-                id="ai-relationship-title"
-                className="mt-2 text-2xl font-black text-white"
-              >
+              <h2 className="mt-2 text-2xl font-black text-white">
                 AI Relationship Suggestions
               </h2>
-
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-                Discover possible Knowledge
-                Graph connections, approve a
-                plan, then create relationships
-                manually in Cloud Relationships.
+              <p className="mt-2 text-sm leading-6 text-neutral-500">
+                Review entry connections, then apply approved relationships directly to the Supabase Knowledge Graph.
               </p>
             </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-black text-neutral-300 hover:border-red-400 hover:text-red-200"
+              className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm font-black text-neutral-300 hover:border-neutral-700 hover:text-white"
             >
               ✕
             </button>
@@ -1204,585 +446,204 @@ function openTargetEntry(
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="space-y-5">
-            <section className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-5">
-              <p className="font-black text-emerald-100">
-                Choose a source entry
-              </p>
+          <section className="rounded-3xl border border-emerald-400/20 bg-emerald-400/5 p-5">
+            <label className="text-xs font-black uppercase tracking-[0.18em] text-emerald-200/70">
+              Focus entry
+            </label>
 
-              <p className="mt-2 text-sm leading-6 text-emerald-100/70">
-                Local scoring chooses likely
-                candidates. AI then compares
-                meaning, context, tone, grammar,
-                and concepts.
-              </p>
-
-              <input
-                value={search}
-                onChange={(event) =>
-                  setSearch(
-                    event.target.value,
-                  )
-                }
-                placeholder="Search entries..."
-                className="mt-4 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-emerald-400"
-              />
-
-              <select
-                value={selectedEntryId}
-                onChange={(event) =>
-                  setSelectedEntryId(
-                    event.target.value,
-                  )
-                }
-                className="mt-3 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-bold text-white outline-none focus:border-emerald-400"
-              >
-                {filteredEntries.length ===
-                0 ? (
-                  <option value="">
-                    No entries found
-                  </option>
-                ) : (
-                  filteredEntries.map(
-                    (entry) => (
-                      <option
-                        key={entry.id}
-                        value={String(
-                          entry.id,
-                        )}
-                      >
-                        {entry.word}
-                      </option>
-                    ),
-                  )
-                )}
-              </select>
-
-              {selectedEntry && (
-  <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-600">
-          Source
-        </p>
-
-        <p className="mt-1 text-xl font-black text-white">
-          {selectedEntry.word}
-        </p>
-
-        <p className="mt-1 text-xs text-neutral-500">
-          {scoredCandidates.length} candidate entries
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          onClose();
-          onOpenEntry?.(selectedEntry);
-        }}
-        className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-black text-neutral-300 hover:border-emerald-400 hover:text-emerald-200"
-      >
-        Open source
-      </button>
-    </div>
-
-    {scoredCandidates.length > 0 && (
-      <div className="mt-4 flex flex-wrap gap-2">
-        {scoredCandidates
-          .slice(0, 10)
-          .map((candidate) => (
-            <span
-              key={candidate.entry.id}
-              className="rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-[11px] font-bold text-neutral-400"
+            <select
+              value={focusEntryId}
+              onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                setFocusEntryId(event.target.value);
+                setResult(null);
+                setError("");
+                setMessage("");
+              }}
+              className="mt-3 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-bold text-white outline-none focus:border-emerald-400"
             >
-              {candidate.entry.word} · {candidate.score}
-            </span>
-          ))}
-      </div>
-    )}
-  </div>
-)}
+              <option value="">Scan strongest relationships across entries</option>
+              {sortedEntries.map((entry) => (
+                <option key={entry.id} value={String(entry.id)}>
+                  {entry.word} · {entry.status}
+                </option>
+              ))}
+            </select>
 
-              <button
-                type="button"
-                onClick={() =>
-                  void runSuggestions()
-                }
-                disabled={
-                  !selectedEntry ||
-                  isLoading ||
-                  scoredCandidates.length ===
-                    0
-                }
-                className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-black text-black hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {isLoading
-                  ? "Analyzing relationships..."
-                  : "Suggest relationships"}
-              </button>
+            <p className="mt-2 text-xs leading-5 text-neutral-500">
+              Selecting one entry asks AI to find its strongest links. A broad scan reviews a limited cross-section of the lexicon.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => void runSuggestions()}
+              disabled={isLoading || entries.length < 2}
+              className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-black text-black hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isLoading
+                ? "Scanning relationships..."
+                : result
+                  ? "Run relationship scan again"
+                  : "Find relationship suggestions"}
+            </button>
+          </section>
+
+          {!isOnline && (
+            <section className="mt-4 rounded-2xl border border-yellow-400/25 bg-yellow-400/10 p-4">
+              <p className="font-black text-yellow-100">Offline review only</p>
+              <p className="mt-2 text-sm leading-6 text-yellow-100/70">
+                You can inspect or dismiss loaded suggestions, but applying graph relationships requires a connection.
+              </p>
             </section>
+          )}
 
-            {error && (
-              <section className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4">
-                <p className="font-black text-red-100">
-                  Relationship analysis
-                  failed
-                </p>
+          {error && (
+            <section className="mt-4 rounded-2xl border border-red-400/25 bg-red-400/10 p-4">
+              <p className="font-black text-red-100">Relationship action failed</p>
+              <p className="mt-2 text-sm leading-6 text-red-100/70">{error}</p>
+            </section>
+          )}
 
-                <p className="mt-2 text-sm leading-6 text-red-100/70">
-                  {error}
-                </p>
-              </section>
-            )}
+          {message && (
+            <section className="mt-4 rounded-2xl border border-green-400/25 bg-green-400/10 p-4 text-sm font-bold leading-6 text-green-100">
+              {message}
+            </section>
+          )}
 
-            {result && (
-              <>
-                <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    <div className="rounded-2xl bg-neutral-950 p-3">
-                      <p className="text-xl font-black text-white">
-                        {
-                          result.analyzedCandidateCount
-                        }
-                      </p>
-
-                      <p className="mt-1 text-[9px] font-black uppercase tracking-[0.13em] text-neutral-600">
-                        Analyzed
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-neutral-950 p-3">
-                      <p className="text-xl font-black text-yellow-200">
-                        {
-                          decisionCounts.pending
-                        }
-                      </p>
-
-                      <p className="mt-1 text-[9px] font-black uppercase tracking-[0.13em] text-neutral-600">
-                        Pending
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-neutral-950 p-3">
-                      <p className="text-xl font-black text-green-200">
-                        {
-                          decisionCounts.approved
-                        }
-                      </p>
-
-                      <p className="mt-1 text-[9px] font-black uppercase tracking-[0.13em] text-neutral-600">
-                        Approved
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-neutral-950 p-3">
-                      <p className="truncate text-xs font-black text-neutral-300">
-                        {modelLabel ||
-                          "AI"}
-                      </p>
-
-                      <p className="mt-2 text-[9px] font-black uppercase tracking-[0.13em] text-neutral-600">
-                        Model
-                      </p>
-                    </div>
+          {result && (
+            <>
+              <section className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-white">
+                      {pendingSuggestions.length} pending suggestion{pendingSuggestions.length === 1 ? "" : "s"}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-neutral-400">
+                      {result.summary}
+                    </p>
+                    {modelLabel && (
+                      <p className="mt-2 text-xs text-neutral-600">Model: {modelLabel}</p>
+                    )}
                   </div>
 
-                  <p className="mt-4 text-sm leading-6 text-neutral-400">
-                    {result.summary}
-                  </p>
-
-                  {result.suggestions.length >
-                    0 && (
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={
-                          approveStrongSuggestions
-                        }
-                        className="rounded-xl bg-green-400 px-3 py-3 text-xs font-black text-black hover:bg-green-300"
-                      >
-                        Approve strongest
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={
-                          resetDecisions
-                        }
-                        className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-xs font-black text-neutral-300 hover:border-neutral-500 hover:text-white"
-                      >
-                        Reset decisions
-                      </button>
+                  <div className="flex shrink-0 gap-2 text-center">
+                    <div className="rounded-xl bg-neutral-950 px-3 py-2">
+                      <p className="font-black text-green-200">{appliedCount}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.12em] text-neutral-600">Applied</p>
                     </div>
-                  )}
+                    <div className="rounded-xl bg-neutral-950 px-3 py-2">
+                      <p className="font-black text-red-200">{dismissedCount}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.12em] text-neutral-600">Dismissed</p>
+                    </div>
+                  </div>
+                </div>
+
+                {pendingSuggestions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void applyAllPending()}
+                    disabled={!isOnline || isApplyingAll || Boolean(applyingId)}
+                    className="mt-4 w-full rounded-xl bg-green-400 px-4 py-3 text-sm font-black text-black hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isApplyingAll
+                      ? "Applying relationships..."
+                      : `Apply all pending · ${pendingSuggestions.length}`}
+                  </button>
+                )}
+              </section>
+
+              {pendingSuggestions.length === 0 ? (
+                <section className="mt-4 rounded-2xl border border-green-400/20 bg-green-400/10 p-6 text-center">
+                  <p className="font-black text-green-100">Relationship review complete</p>
+                  <p className="mt-2 text-sm text-green-100/70">
+                    Every suggestion from this scan has been applied or dismissed.
+                  </p>
                 </section>
-
-                {result.suggestions.length ===
-                0 ? (
-                  <section className="rounded-3xl border border-green-400/20 bg-green-400/10 p-6 text-center">
-                    <p className="text-lg font-black text-green-100">
-                      No relationships flagged
-                    </p>
-
-                    <p className="mt-2 text-sm leading-6 text-green-100/70">
-                      The selected candidates did
-                      not provide enough evidence
-                      for a relationship
-                      suggestion.
-                    </p>
-                  </section>
-                ) : (
-                  <section>
-                    <p className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
-                      Suggested relationships
-                    </p>
-
-                    <div className="space-y-4">
-                      {result.suggestions.map(
-                        (suggestion) => {
-                          const decision =
-                            decisions[
-                              suggestion.id
-                            ] ??
-                            "pending";
-
-                          const copyLabel =
-                            `suggestion-${suggestion.id}`;
-
-                          return (
-                            <article
-                              key={
-                                suggestion.id
-                              }
-                              className={`rounded-3xl border p-5 ${
-                                decision ===
-                                "approved"
-                                  ? "border-green-400/30 bg-green-400/10"
-                                  : decision ===
-                                      "rejected"
-                                    ? "border-red-400/20 bg-red-400/5"
-                                    : "border-neutral-800 bg-neutral-900"
-                              }`}
+              ) : (
+                <section className="mt-4 space-y-4">
+                  {pendingSuggestions.map((suggestion) => (
+                    <article
+                      key={suggestion.id}
+                      className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEntry(suggestion.sourceEntryId)}
+                              className="text-lg font-black text-white hover:text-emerald-200"
                             >
-                              <div className="flex flex-wrap items-start justify-between gap-4">
-                                <div>
-                                  <div className="flex flex-wrap gap-2">
-                                    <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-[10px] font-black uppercase tracking-[0.13em] text-emerald-100">
-                                      {relationshipTypeLabel(
-                                        suggestion.relationshipType,
-                                      )}
-                                    </span>
-
-                                    <span className="rounded-full bg-neutral-800 px-3 py-1 text-[10px] font-black text-neutral-300">
-                                      {directionLabel(
-                                        suggestion.direction,
-                                      )}
-                                    </span>
-
-                                    <span className="rounded-full bg-neutral-800 px-3 py-1 text-[10px] font-black text-neutral-400">
-                                      {
-                                        suggestion.confidence
-                                      }{" "}
-                                      confidence
-                                    </span>
-                                  </div>
-
-                                  <h3 className="mt-3 text-xl font-black text-white">
-                                    {
-                                      result.sourceEntryWord
-                                    }{" "}
-                                    ↔{" "}
-                                    {
-                                      suggestion.targetWord
-                                    }
-                                  </h3>
-                                </div>
-
-                                <div className="text-right">
-                                  <p className="text-3xl font-black text-emerald-200">
-                                    {
-                                      suggestion.relationshipScore
-                                    }
-                                  </p>
-
-                                  <p className="text-[9px] font-black uppercase tracking-[0.13em] text-neutral-600">
-                                    Score
-                                  </p>
-                                </div>
-                              </div>
-
-                              <p className="mt-4 text-sm leading-6 text-neutral-300">
-                                {
-                                  suggestion.reasoning
-                                }
-                              </p>
-
-                              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-green-200">
-                                    Shared signals
-                                  </p>
-
-                                  {suggestion.sharedSignals
-                                    .length ===
-                                  0 ? (
-                                    <p className="mt-3 text-xs text-neutral-500">
-                                      No shared
-                                      signals listed.
-                                    </p>
-                                  ) : (
-                                    <div className="mt-3 space-y-2">
-                                      {suggestion.sharedSignals.map(
-                                        (
-                                          signal,
-                                          index,
-                                        ) => (
-                                          <p
-                                            key={`${signal}-${index}`}
-                                            className="text-xs leading-5 text-neutral-300"
-                                          >
-                                            •{" "}
-                                            {
-                                              signal
-                                            }
-                                          </p>
-                                        ),
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-cyan-200">
-                                    Differences
-                                  </p>
-
-                                  {suggestion.differences
-                                    .length ===
-                                  0 ? (
-                                    <p className="mt-3 text-xs text-neutral-500">
-                                      No important
-                                      differences
-                                      listed.
-                                    </p>
-                                  ) : (
-                                    <div className="mt-3 space-y-2">
-                                      {suggestion.differences.map(
-                                        (
-                                          difference,
-                                          index,
-                                        ) => (
-                                          <p
-                                            key={`${difference}-${index}`}
-                                            className="text-xs leading-5 text-neutral-300"
-                                          >
-                                            •{" "}
-                                            {
-                                              difference
-                                            }
-                                          </p>
-                                        ),
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {suggestion.requiresVerification && (
-                                <div className="mt-4 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-                                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-yellow-200">
-                                    Verification required
-                                  </p>
-
-                                  <p className="mt-2 text-xs leading-5 text-yellow-100/70">
-                                    {
-                                      suggestion.verificationNote
-                                    }
-                                  </p>
-                                </div>
-                              )}
-
-                              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDecision(
-                                      suggestion.id,
-                                      "approved",
-                                    )
-                                  }
-                                  className="rounded-xl bg-green-400 px-3 py-2 text-xs font-black text-black hover:bg-green-300"
-                                >
-                                  Approve
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDecision(
-                                      suggestion.id,
-                                      "rejected",
-                                    )
-                                  }
-                                  className="rounded-xl bg-red-500/20 px-3 py-2 text-xs font-black text-red-200 hover:bg-red-500/30"
-                                >
-                                  Reject
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void copyText(
-                                      copyLabel,
-                                      [
-                                        `${result.sourceEntryWord} ↔ ${suggestion.targetWord}`,
-                                        `Type: ${relationshipTypeLabel(
-                                          suggestion.relationshipType,
-                                        )}`,
-                                        `Direction: ${directionLabel(
-                                          suggestion.direction,
-                                        )}`,
-                                        `Reason: ${suggestion.reasoning}`,
-                                      ].join(
-                                        "\n",
-                                      ),
-                                    )
-                                  }
-                                  className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-black text-neutral-300 hover:border-emerald-400 hover:text-emerald-200"
-                                >
-                                  {copiedLabel ===
-                                  copyLabel
-                                    ? "Copied"
-                                    : "Copy"}
-                                </button>
-
-                                <button
-  type="button"
-  onClick={() => {
-    const targetEntry = entries.find(
-      (entry) =>
-        String(entry.id) ===
-        String(
-          suggestion.targetEntryId,
-        ),
-    );
-
-    if (!targetEntry) {
-      return;
-    }
-
-    onClose();
-    onOpenEntry?.(targetEntry);
-  }}
-  className="rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-black text-neutral-300 hover:border-cyan-400 hover:text-cyan-200"
->
-  Open target
-</button>
-                              </div>
-                            </article>
-                          );
-                        },
-                      )}
-                    </div>
-                  </section>
-                )}
-
-                {result.verificationChecklist
-                  .length > 0 && (
-                  <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
-                      Graph review checklist
-                    </p>
-
-                    <div className="mt-4 space-y-2">
-                      {result.verificationChecklist.map(
-                        (item, index) => (
-                          <div
-                            key={`${item}-${index}`}
-                            className="flex gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-3"
-                          >
-                            <span className="text-neutral-600">
-                              □
-                            </span>
-
-                            <p className="text-xs leading-5 text-neutral-300">
-                              {item}
-                            </p>
+                              {suggestion.sourceWord}
+                            </button>
+                            <span className="text-neutral-600">→</span>
+                            <button
+                              type="button"
+                              onClick={() => openEntry(suggestion.targetEntryId)}
+                              className="text-lg font-black text-white hover:text-emerald-200"
+                            >
+                              {suggestion.targetWord}
+                            </button>
                           </div>
-                        ),
-                      )}
-                    </div>
-                  </section>
-                )}
 
-                <section className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
-                  <p className="font-black text-emerald-100">
-                    Manual graph editing only
-                  </p>
+                          <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-emerald-300">
+                            {RELATIONSHIP_LABELS[suggestion.relationshipType]}
+                          </p>
+                        </div>
 
-                  <p className="mt-2 text-sm leading-6 text-emerald-100/70">
-                    Approving a suggestion only
-                    adds it to the local plan. Use
-                    Cloud Relationships to create
-                    verified graph records
-                    manually.
-                  </p>
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${confidenceClasses(suggestion.confidence)}`}>
+                            {suggestion.confidence} confidence
+                          </span>
+                          <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100">
+                            Strength {suggestion.strength}/10
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-neutral-600">
+                          Why this link
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-neutral-300">
+                          {suggestion.reason}
+                        </p>
+                      </div>
+
+                      <div className="mt-3 rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-yellow-300">
+                          Verify
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-yellow-100/70">
+                          {suggestion.verificationNote}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleApplySuggestion(suggestion)}
+                          disabled={!isOnline || Boolean(applyingId) || isApplyingAll}
+                          className="rounded-xl bg-green-400 px-3 py-3 text-sm font-black text-black hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {applyingId === suggestion.id ? "Applying..." : "Apply relationship"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => dismissSuggestion(suggestion.id)}
+                          disabled={Boolean(applyingId) || isApplyingAll}
+                          className="rounded-xl border border-red-400/25 bg-red-400/10 px-3 py-3 text-sm font-black text-red-100 hover:bg-red-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </article>
+                  ))}
                 </section>
-              </>
-            )}
-          </div>
+              )}
+            </>
+          )}
         </div>
-
-        <footer className="border-t border-neutral-800 bg-neutral-950 p-4 sm:p-5">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <button
-              type="button"
-              onClick={() =>
-                void copyApprovedPlan(
-                  false,
-                )
-              }
-              disabled={
-                approvedSuggestions.length ===
-                0
-              }
-              className="rounded-xl bg-emerald-300 px-4 py-3 text-sm font-black text-black hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              {copiedLabel ===
-              "approved-plan"
-                ? "Plan copied"
-                : `Copy approved · ${approvedSuggestions.length}`}
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                void copyApprovedPlan(
-                  true,
-                )
-              }
-              disabled={
-  approvedSuggestions.length === 0 ||
-  (
-    !onSendApprovedPlan &&
-    !onOpenRelationshipEditor
-  )
-}
-              className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              Send to relationship editor
-            </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-black text-neutral-300 hover:border-neutral-500 hover:text-white"
-            >
-              Close
-            </button>
-          </div>
-        </footer>
       </aside>
     </div>
   );
