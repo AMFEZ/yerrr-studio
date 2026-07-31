@@ -12,7 +12,7 @@ import type { PublicEntrySettingsMap } from "@/types/publicPublishing";
 type ContentReadyDeclaration = {
   project: "YERRR Studio";
   milestone: "Studio v1.0 Content Ready";
-  version: "Alpha 5.16B";
+  version: "YERRR Studio";
   declaredAt: string;
   entryCount: number;
   publishingSettingsCount: number;
@@ -291,7 +291,7 @@ export function StudioContentReadyPanel({
       project: "YERRR Studio",
       milestone:
         "Studio v1.0 Content Ready",
-      version: "Alpha 5.16B",
+      version: "YERRR Studio",
       declaredAt:
         new Date().toISOString(),
       entryCount: entries.length,
@@ -391,11 +391,7 @@ export function StudioContentReadyPanel({
           <div className="flex items-start justify-between gap-5">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-yellow-400">
-                  Alpha 5.16B
-                </p>
-
-                <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-green-200">
+<span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-green-200">
                   Final Studio Milestone
                 </span>
               </div>

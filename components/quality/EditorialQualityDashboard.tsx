@@ -1591,11 +1591,7 @@ export function EditorialQualityDashboard({
           <div className="flex items-start justify-between gap-5">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-yellow-400">
-                  Alpha 5.14A
-                </p>
-
-                <span className="rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-200">
+<span className="rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-200">
                   Quality Control
                 </span>
 

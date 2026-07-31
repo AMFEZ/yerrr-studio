@@ -461,9 +461,6 @@ export function Sidebar(props: SidebarProps) {
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <span className="hidden rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-[10px] font-black text-neutral-400 sm:inline-flex">
-                {VERSION_LABEL}
-              </span>
 
               {props.onOpenSettings && (
                 <button
@@ -538,9 +535,6 @@ export function Sidebar(props: SidebarProps) {
             </p>
 
             <div className="mt-4 flex items-center justify-between gap-3">
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-zinc-200">
-                {VERSION_LABEL}
-              </span>
 
               <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-zinc-950">
                 {counts.total} entries

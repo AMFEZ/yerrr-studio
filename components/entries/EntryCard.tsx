@@ -9,8 +9,7 @@ function getMissingMeaningFields(meaning: Meaning) {
 
   if (!meaning.title.trim()) missingFields.push("title");
   if (!meaning.definition.trim()) missingFields.push("definition");
-  if (!meaning.example.trim()) missingFields.push("example");
-  if (!meaning.plainEnglish.trim()) missingFields.push("plain English");
+  if (!meaning.example.trim()) missingFields.push("example");
   if (!meaning.category.trim()) missingFields.push("category");
   if (!meaning.tone.trim()) missingFields.push("tone");
   if (!meaning.usageFrequency.trim()) missingFields.push("usage frequency");

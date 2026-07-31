@@ -1175,7 +1175,7 @@ export function AIAssistantDrawer({
       )}-${dateSlug}.json`,
       {
         app: "YERRR Studio",
-        version: "Alpha 5.5",
+        version: "YERRR Studio",
         exportType: "approved_ai_edit_plan",
         exportedAt: new Date().toISOString(),
         entryId: review.entryId,
@@ -1206,7 +1206,7 @@ export function AIAssistantDrawer({
       )}-${dateSlug}.json`,
       {
         app: "YERRR Studio",
-        version: "Alpha 5.5",
+        version: "YERRR Studio",
         exportType: "approved_ai_edit_plan",
         exportedAt: new Date().toISOString(),
         sourceReviewId: item.id,
@@ -1248,7 +1248,7 @@ export function AIAssistantDrawer({
 
     downloadJsonFile(`yerrr-ai-review-history-${dateSlug}.json`, {
       app: "YERRR Studio",
-      version: "Alpha 5.5",
+      version: "YERRR Studio",
       exportType: "ai_entry_review_history",
       exportedAt: new Date().toISOString(),
       reviewCount: reviewHistory.length,

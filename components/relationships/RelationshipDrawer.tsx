@@ -470,7 +470,7 @@ export function RelationshipDrawer({
   function exportRelationshipsJson() {
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.5",
+      version: "YERRR Studio",
       exportType: "entry_relationships",
       exportedAt: new Date().toISOString(),
       counts: {

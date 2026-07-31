@@ -299,10 +299,7 @@ export function MediaBulkWorkflowPanel({
         <header className="border-b border-neutral-800 p-5 sm:p-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
-                Alpha 6.0C
-              </p>
-              <h2 className="mt-2 text-3xl font-black text-white sm:text-4xl">
+<h2 className="mt-2 text-3xl font-black text-white sm:text-4xl">
                 Media Bulk Workflow
               </h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">

@@ -763,7 +763,7 @@ export function StudioReleaseReadinessPanel({
   function downloadReport() {
     const report = {
       project: "YERRR Studio",
-      version: "Alpha 5.16A",
+      version: "YERRR Studio",
       generatedAt:
         new Date().toISOString(),
       releaseScore,
@@ -839,11 +839,7 @@ export function StudioReleaseReadinessPanel({
           <div className="flex items-start justify-between gap-5">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-yellow-400">
-                  Alpha 5.16A
-                </p>
-
-                <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200">
+<span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200">
                   Release Candidate
                 </span>
 

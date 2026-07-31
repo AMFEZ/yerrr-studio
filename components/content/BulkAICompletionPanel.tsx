@@ -491,10 +491,7 @@ export function BulkAICompletionPanel({
         <header className="sticky top-0 z-20 border-b border-neutral-800 bg-neutral-950/95 p-5 backdrop-blur lg:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.24em] text-violet-300">
-                Alpha 5.18C
-              </p>
-              <h2 className="mt-2 text-2xl font-black text-white sm:text-3xl">
+<h2 className="mt-2 text-2xl font-black text-white sm:text-3xl">
                 Bulk AI Completion Queue
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">

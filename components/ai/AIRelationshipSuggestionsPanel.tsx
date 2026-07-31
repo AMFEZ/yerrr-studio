@@ -424,10 +424,7 @@ export function AIRelationshipSuggestionsPanel({
         <header className="border-b border-neutral-800 bg-neutral-950/95 p-5 backdrop-blur sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-300">
-                Alpha 5.17H4
-              </p>
-              <h2 className="mt-2 text-2xl font-black text-white">
+<h2 className="mt-2 text-2xl font-black text-white">
                 AI Relationship Suggestions
               </h2>
               <p className="mt-2 text-sm leading-6 text-neutral-500">

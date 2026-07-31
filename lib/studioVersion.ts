@@ -1,1 +1,1 @@
-export const STUDIO_VERSION = "Alpha 6.1C";
+export const STUDIO_VERSION = "YERRR Studio";

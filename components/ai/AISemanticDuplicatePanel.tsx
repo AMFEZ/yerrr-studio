@@ -314,10 +314,7 @@ export function AISemanticDuplicatePanel({
         <header className="border-b border-neutral-800 bg-cyan-400/5 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-300">
-                Alpha 5.17H3
-              </p>
-              <h2 className="mt-2 text-2xl font-black text-white">
+<h2 className="mt-2 text-2xl font-black text-white">
                 AI Semantic Duplicate Review
               </h2>
               <p className="mt-2 text-sm leading-6 text-neutral-500">

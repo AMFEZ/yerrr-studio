@@ -264,7 +264,7 @@ export function MergeConceptsDrawer({
 
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.4",
+      version: "YERRR Studio",
       exportType: "pre_concept_merge_backup",
       exportedAt: new Date().toISOString(),
       plannedMerge: {

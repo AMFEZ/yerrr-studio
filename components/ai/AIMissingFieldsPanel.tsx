@@ -141,11 +141,6 @@ function applySuggestionToEntry(
   };
 }
 
-function confidenceLabel(
-  suggestion: AIMissingFieldSuggestion,
-) {
-  return `${suggestion.confidence} confidence`;
-}
 
 function removeSuggestion(
   result: AIMissingFieldsResult,
@@ -187,11 +182,7 @@ export function AIMissingFieldsPanel({
     useState<AIMissingFieldsResult | null>(
       null,
     );
-
-  const [modelLabel, setModelLabel] =
-    useState("");
-
-  const [error, setError] =
+const [error, setError] =
     useState("");
 
   const [notice, setNotice] =
@@ -225,7 +216,6 @@ export function AIMissingFieldsPanel({
   useEffect(() => {
     setWorkingEntry(entry);
     setResult(null);
-    setModelLabel("");
     setError("");
     setNotice("");
     setIsLoading(false);
@@ -306,9 +296,6 @@ export function AIMissingFieldsPanel({
       }
 
       setResult(payload.result);
-      setModelLabel(
-        payload.model ?? "",
-      );
       setNotice("");
     } catch (scanError) {
       setResult(null);
@@ -515,19 +502,12 @@ export function AIMissingFieldsPanel({
       <header className="border-b border-neutral-800 bg-violet-400/10 p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">
-              Alpha 5.17G
-            </p>
-
-            <h2 className="mt-1 text-lg font-black text-white">
+<h2 className="mt-1 text-lg font-black text-white">
               AI Fill Missing Fields
             </h2>
 
             <p className="mt-1 text-xs text-neutral-400">
               {workingEntry.word}
-              {modelLabel
-                ? ` · ${modelLabel}`
-                : ""}
             </p>
           </div>
 
@@ -566,17 +546,7 @@ export function AIMissingFieldsPanel({
               <p className="text-xs font-black uppercase tracking-[0.16em] text-violet-200">
                 Apply suggestions directly
               </p>
-
-              <p className="mt-2 text-sm leading-6 text-neutral-400">
-                AI scans supported empty
-                fields only. Approve writes the
-                suggestion into the entry and
-                saves it. Deny removes the
-                suggestion without changing the
-                entry.
-              </p>
-
-              <button
+<button
                 type="button"
                 onClick={() =>
                   void runMissingFieldsScan()
@@ -732,13 +702,7 @@ export function AIMissingFieldsPanel({
                                     }
                                   </p>
                                 </div>
-
-                                <span className="rounded-full bg-neutral-800 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-neutral-400">
-                                  {confidenceLabel(
-                                    suggestion,
-                                  )}
-                                </span>
-                              </div>
+</div>
 
                               {suggestion.suggestedValue ? (
                                 <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/10 p-3">
@@ -765,28 +729,7 @@ export function AIMissingFieldsPanel({
                                   </p>
                                 </div>
                               )}
-
-                              <p className="mt-3 text-xs leading-5 text-neutral-400">
-                                {
-                                  suggestion.reason
-                                }
-                              </p>
-
-                              {suggestion.requiresVerification && (
-                                <div className="mt-3 rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3">
-                                  <p className="text-[9px] font-black uppercase tracking-[0.14em] text-yellow-300">
-                                    Verify before publishing
-                                  </p>
-
-                                  <p className="mt-2 text-xs leading-5 text-yellow-100/70">
-                                    {
-                                      suggestion.verificationNote
-                                    }
-                                  </p>
-                                </div>
-                              )}
-
-                              <div className="mt-4 grid grid-cols-3 gap-2">
+<div className="mt-4 grid grid-cols-3 gap-2">
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -845,40 +788,7 @@ export function AIMissingFieldsPanel({
                     </div>
                   </section>
                 )}
-
-                {result.verificationChecklist
-                  .length > 0 && (
-                  <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">
-                      Verification checklist
-                    </p>
-
-                    <div className="mt-3 space-y-2">
-                      {result.verificationChecklist.map(
-                        (
-                          checklistItem,
-                          index,
-                        ) => (
-                          <div
-                            key={`${checklistItem}-${index}`}
-                            className="flex gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-3"
-                          >
-                            <span className="text-neutral-600">
-                              □
-                            </span>
-
-                            <p className="text-xs leading-5 text-neutral-300">
-                              {
-                                checklistItem
-                              }
-                            </p>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </section>
-                )}
-              </>
+</>
             )}
           </div>
 

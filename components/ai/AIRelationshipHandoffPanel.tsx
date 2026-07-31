@@ -170,11 +170,7 @@ export function AIRelationshipHandoffPanel({
       <header className="border-b border-neutral-800 bg-emerald-400/10 p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">
-              Alpha 5.10
-            </p>
-
-            <h2 className="mt-1 text-lg font-black text-white">
+<h2 className="mt-1 text-lg font-black text-white">
               AI Relationship Handoff
             </h2>
 

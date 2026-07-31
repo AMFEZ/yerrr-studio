@@ -596,7 +596,7 @@ export function ConceptDrawer({
   function exportConceptsJson() {
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.2",
+      version: "YERRR Studio",
       exportType: "concepts",
       exportedAt: new Date().toISOString(),
       counts: {
@@ -617,7 +617,7 @@ export function ConceptDrawer({
   function exportGraphJson() {
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.2",
+      version: "YERRR Studio",
       exportType: "local_knowledge_graph",
       exportedAt: new Date().toISOString(),
       counts: {
@@ -645,7 +645,7 @@ export function ConceptDrawer({
 
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.2",
+      version: "YERRR Studio",
       exportType: "concept_linked_entries",
       exportedAt: new Date().toISOString(),
       concept: browseConcept,

@@ -461,7 +461,7 @@ export function GraphStatsDrawer({
   function exportHealthReport() {
     const report = {
       app: "YERRR Studio",
-      version: "Alpha 3.7C4A",
+      version: "YERRR Studio",
       source: "Supabase",
       exportType: "cloud_graph_health_report",
       exportedAt: new Date().toISOString(),

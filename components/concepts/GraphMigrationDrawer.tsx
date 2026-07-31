@@ -429,7 +429,7 @@ export function GraphMigrationDrawer({
   function downloadSafetyBackup() {
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.7B",
+      version: "YERRR Studio",
       exportType: "pre_supabase_graph_migration",
       exportedAt: new Date().toISOString(),
       counts: {

@@ -38,7 +38,6 @@ export function CaptureModal({
           onKeyDown={(event) => {
             if (event.key === "Enter") handleSave();
           }}
-          placeholder="Buck"
           className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none placeholder:text-neutral-600 focus:border-yellow-400"
         />
 

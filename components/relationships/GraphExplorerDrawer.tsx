@@ -690,7 +690,7 @@ export function GraphExplorerDrawer({
 
     const backup = {
       app: "YERRR Studio",
-      version: "Alpha 3.7C4B",
+      version: "YERRR Studio",
       source: "Supabase",
       exportType: "cloud_entry_graph_neighborhood",
       exportedAt: new Date().toISOString(),

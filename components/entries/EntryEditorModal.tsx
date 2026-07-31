@@ -74,6 +74,8 @@ function getMissingMeaningFields(meaning: Meaning) {
   if (!meaning.example.trim()) missingFields.push("Example Sentence");
   if (!meaning.category.trim()) missingFields.push("Category");
   if (!meaning.tone.trim()) missingFields.push("Tone");
+  if (!meaning.conceptsText.trim()) missingFields.push("Concepts");
+
   if (!meaning.usageFrequency.trim()) missingFields.push("Usage Frequency");
 
   return missingFields;
@@ -597,7 +599,6 @@ export function EntryEditorModal({
                 onChange={(event) =>
                   setDraft({ ...draft, slug: event.target.value })
                 }
-                placeholder="deadass"
                 className={inputClass}
               />
             </Field>
@@ -608,7 +609,6 @@ export function EntryEditorModal({
                 onChange={(event) =>
                   setDraft({ ...draft, pronunciation: event.target.value })
                 }
-                placeholder="deh-dass"
                 className={inputClass}
               />
             </Field>
@@ -636,131 +636,7 @@ export function EntryEditorModal({
                     alternateSpellings: event.target.value,
                   })
                 }
-                placeholder="dead ass, dead@ss"
                 className={inputClass}
-              />
-            </Field>
-          </div>
-        </Section>
-
-        <Section
-          title="Publishing & Media"
-          subtitle="Status, visibility, audio, and illustration fields."
-        >
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Entry Status">
-              <select
-                value={draft.status}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    status: event.target.value as EntryStatus,
-                  })
-                }
-                className={selectClass}
-              >
-                {entryStatusOptions.map((status) => (
-                  <option key={status}>{status}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Lifecycle">
-              <select
-                value={draft.lifecycle}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    lifecycle: event.target.value as Entry["lifecycle"],
-                  })
-                }
-                className={selectClass}
-              >
-                {lifecycleOptions.map((lifecycle) => (
-                  <option key={lifecycle}>{lifecycle}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Visibility">
-              <select
-                value={draft.visibility}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    visibility: event.target.value as Entry["visibility"],
-                  })
-                }
-                className={selectClass}
-              >
-                {visibilityOptions.map((visibility) => (
-                  <option key={visibility}>{visibility}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="AI Added?">
-              <select
-                value={draft.aiAddedStatus}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    aiAddedStatus: event.target.value as Entry["aiAddedStatus"],
-                  })
-                }
-                className={selectClass}
-              >
-                {aiAddedStatusOptions.map((status) => (
-                  <option key={status}>{status}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Audio Filename">
-              <input
-                value={draft.audioFilename}
-                onChange={(event) =>
-                  setDraft({ ...draft, audioFilename: event.target.value })
-                }
-                placeholder="deadass.mp3"
-                className={inputClass}
-              />
-            </Field>
-
-            <Field label="Illustration Filename">
-              <input
-                value={draft.illustrationFilename}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    illustrationFilename: event.target.value,
-                  })
-                }
-                placeholder="deadass.png"
-                className={inputClass}
-              />
-            </Field>
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <CheckboxField
-              label="Featured?"
-              checked={draft.featured}
-              onChange={(checked) => setDraft({ ...draft, featured: checked })}
-            />
-
-            <Field label="Illustration Notes">
-              <textarea
-                value={draft.illustrationNotes}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    illustrationNotes: event.target.value,
-                  })
-                }
-                placeholder="Visual direction for future illustrations."
-                rows={3}
-                className={textareaClass}
               />
             </Field>
           </div>
@@ -828,7 +704,6 @@ export function EntryEditorModal({
                             title: event.target.value,
                           })
                         }
-                        placeholder="Money, Honesty, Shooting..."
                         className={inputClass}
                       />
                     </Field>
@@ -925,7 +800,6 @@ export function EntryEditorModal({
                             definition: event.target.value,
                           })
                         }
-                        placeholder="What does it mean?"
                         rows={3}
                         className={textareaClass}
                       />
@@ -939,7 +813,6 @@ export function EntryEditorModal({
                             example: event.target.value,
                           })
                         }
-                        placeholder="Use it in a real NYC-style sentence."
                         rows={3}
                         className={textareaClass}
                       />
@@ -955,19 +828,11 @@ export function EntryEditorModal({
                             conceptsText: event.target.value,
                           })
                         }
-                        placeholder="Money, Agreement, Conflict..."
                         className={inputClass}
                       />
 
                       <div className="mt-3 rounded-xl border border-sky-400/20 bg-sky-400/5 p-4">
-                        <p className="text-xs leading-5 text-sky-100/70">
-                          Use commas between concepts. Existing names connect to
-                          the Concept Library; new names are created there
-                          automatically. Entry-level cloud assignments combine
-                          the concepts from every meaning.
-                        </p>
-
-                        {parseConceptNames(meaning.conceptsText).length > 0 && (
+{parseConceptNames(meaning.conceptsText).length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {parseConceptNames(meaning.conceptsText).map(
                               (conceptName) => (
@@ -1028,7 +893,6 @@ export function EntryEditorModal({
                             culturalContext: event.target.value,
                           })
                         }
-                        placeholder="Where, when, or how people use this."
                         rows={3}
                         className={textareaClass}
                       />
@@ -1042,7 +906,6 @@ export function EntryEditorModal({
                             source: event.target.value,
                           })
                         }
-                        placeholder="Original, TikTok, friend, memory..."
                         className={inputClass}
                       />
                     </Field>
@@ -1072,13 +935,132 @@ export function EntryEditorModal({
           </div>
         </Section>
 
+        <Section
+          title="Publishing & Media"
+          subtitle="Status, visibility, audio, and illustration fields."
+        >
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label="Entry Status">
+              <select
+                value={draft.status}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    status: event.target.value as EntryStatus,
+                  })
+                }
+                className={selectClass}
+              >
+                {entryStatusOptions.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Lifecycle">
+              <select
+                value={draft.lifecycle}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    lifecycle: event.target.value as Entry["lifecycle"],
+                  })
+                }
+                className={selectClass}
+              >
+                {lifecycleOptions.map((lifecycle) => (
+                  <option key={lifecycle}>{lifecycle}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Visibility">
+              <select
+                value={draft.visibility}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    visibility: event.target.value as Entry["visibility"],
+                  })
+                }
+                className={selectClass}
+              >
+                {visibilityOptions.map((visibility) => (
+                  <option key={visibility}>{visibility}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="AI Added?">
+              <select
+                value={draft.aiAddedStatus}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    aiAddedStatus: event.target.value as Entry["aiAddedStatus"],
+                  })
+                }
+                className={selectClass}
+              >
+                {aiAddedStatusOptions.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Audio Filename">
+              <input
+                value={draft.audioFilename}
+                onChange={(event) =>
+                  setDraft({ ...draft, audioFilename: event.target.value })
+                }
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Illustration Filename">
+              <input
+                value={draft.illustrationFilename}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    illustrationFilename: event.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <CheckboxField
+              label="Featured?"
+              checked={draft.featured}
+              onChange={(checked) => setDraft({ ...draft, featured: checked })}
+            />
+
+            <Field label="Illustration Notes">
+              <textarea
+                value={draft.illustrationNotes}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    illustrationNotes: event.target.value,
+                  })
+                }
+                rows={3}
+                className={textareaClass}
+              />
+            </Field>
+          </div>
+        </Section>
+
         <Section title="Editorial Notes" subtitle="Private notes for your CMS.">
           <textarea
             value={draft.notes}
             onChange={(event) =>
               setDraft({ ...draft, notes: event.target.value })
             }
-            placeholder="Add context, uncertainty, borough notes, or reminders."
             rows={4}
             className={textareaClass}
           />
